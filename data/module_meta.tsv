@@ -1,0 +1,99 @@
+module	count	category	name
+0	54	Physiology	Growth Advantage
+1	53	Stress	Membrane Stress
+2	47	Carbon Metabolism	Galacturonic Acid Utilization
+3	33	Physiology	Flagellar Biosynthesis
+4	30	Physiology	Cobalamin Biosynthesis
+5	26	Stress	SDS/Detergent Resistance
+6	26	Carbon Metabolism	Inositol Utilization
+7	26	Physiology	Phosphate Starvation
+8	24	Carbon Metabolism	Gluconate Utilization
+9	22	Carbon Metabolism	Phosphoenolpyruvate Metabolism
+10	22	Plant	Nicotiana benthamiana Leaf Colonization
+11	21	Carbon Metabolism	D-Glucurono-6,3-Lactone and Saccharic Acid Utilization
+12	20	Physiology	Cofactor Biosynthesis
+13	20	Carbon Metabolism	L-Ascorbate Utilization I
+14	20	Carbon Metabolism	Histidine Biosynthesis
+15	19	Carbon Metabolism	L-Xylose Utilization
+16	18	Carbon Metabolism	Xylitol Utilization
+17	18	Carbon Metabolism	Glycolysis/Gluconeogenesis
+18	18	Stress	Acetovanillone/Pyrogallol Responsive Prophage
+19	18	Carbon Metabolism	Aromatic Compound Utilization
+20	17	Carbon Metabolism	Sorbose Utilization
+21	17	Nitrogen Metabolism	Choline Utilization
+22	17	Plant	UPP Mediated Plant Attachment
+23	16	Carbon Metabolism	Coumarate and Phloretic Acid Utilization
+24	16	Carbon Metabolism	Glyoxylate Shunt
+25	16	Carbon Metabolism	L-Ascorbate Utilization II
+26	15	Plant	Polysaccharides Required For Plant Colonization I
+27	15	Stress	Low Oxygen Response
+28	15	Carbon Metabolism	Fucose Utilization
+29	15	Plant	Plant Lysate
+30	15	Carbon Metabolism	Purine Biosynthesis
+31	15	Carbon Metabolism	Lactose, Lactitol, and Lactulose Utilization
+32	15	Carbon Metabolism	Rhamnogalacturonan Utilization
+33	14	Carbon Metabolism	D-Xylose and Xylobiose Utilization
+34	14	Plant	Polysaccharides Required For Plant Colonization II
+35	14	Carbon Metabolism	N-Acetyl-Glucosamine Utilization
+36	14	Nitrogen Metabolism	Arginine/Urea Assimilation
+37	14	Physiology	Cytochrome Biogenesis I
+38	13	Physiology	Cytochrome Biogenesis II
+39	13	Nitrogen Metabolism	Nitrate Assimilation
+40	13	Carbon Metabolism	Quinic Acid Utilization
+41	13	Stress	Carvone Resistance
+42	13	Carbon Metabolism	D-Raffinose, Melibiose, and Stachyose Utilization
+43	13	Plant	Monocot Leaf Colonization
+44	13	Carbon Metabolism	D-Ribose Utilization
+45	12	Carbon Metabolism	L-Leucine Biosynthesis
+46	12	Carbon Metabolism	Galactose and L-Arabinose Utilization
+47	12	Plant	Plant Root Colonization
+48	12	Carbon Metabolism	Serine Biosynthesis
+49	12	Carbon Metabolism	Glucose Oligosaccharide Utilization
+50	12	Carbon Metabolism	L-Galactose, L-Fucose, and D-Arabinose Utilization
+51	11	Stress	Glycine and D-Amino Acid Mediated Cell Wall Stress
+52	11	Carbon Metabolism	Ribitol Utilization
+53	11	Carbon Metabolism	L-Lysine Utilization
+54	11	Carbon Metabolism	L-Rhamnose Utilization
+55	11	Nitrogen Metabolism	Orotic Acid/Uracil Utilization
+56	10	Nitrogen Metabolism	Cysteine Reduction/Utilization
+57	10	Nitrogen Metabolism	Global Nitrogen Utilization
+58	10	Nitrogen Metabolism	Polyamine Utilization
+59	10	Carbon Metabolism	Fatty Acid Utilization
+60	9	Carbon Metabolism	Sorbitol Utilization
+61	9	Carbon Metabolism	Mannitol Utilization
+62	9	Nitrogen Metabolism	Glutamine and Pyroglutamate Utilization
+63	9	Nitrogen Metabolism	Glutamate and Aspartate Utilization
+64	9	Nitrogen Metabolism	Ethanolamine Utilization
+65	9	Carbon Metabolism	Glucosamine Utilization
+66	9	Nitrogen Metabolism	4-Aminobutyrate Utilization
+67	9	Carbon Metabolism	Glyceraldehyde Utilization
+68	9	Carbon Metabolism	Glucose-6-Phosphate Utilization
+69	8	Nitrogen Metabolism	Omega Amino Acid Utilization
+70	8	Uncharacterized	Uncharacterized I
+71	8	Carbon Metabolism	Glucose and Fructose Utilization
+72	8	Carbon Metabolism	alpha-Glucopyranoside Utilization I
+73	8	Nitrogen Metabolism	pAT D-Lysine Utilization
+74	7	Physiology	Pyrimidine Biosynthesis
+75	7	Carbon Metabolism	alpha-Glucopyranoside Utilization II
+76	7	Nitrogen Metabolism	Glycine Cleavage
+77	6	Carbon Metabolism	Fructose and Xylitol Utilization
+78	6	Stress	Acid Resistance
+79	6	Plant	Sorghum Leaf
+80	6	Carbon Metabolism	Diacid and Diol Utilization
+81	6	Carbon Metabolism	D-Trehalose Utilization
+82	6	Nitrogen Metabolism	Glutamate Biosynthesis
+83	6	Uncharacterized	Uncharacterized II
+84	6	Nitrogen Metabolism	Alanine Utilization
+85	5	Nitrogen Metabolism	Beta-Alanine Utilization
+86	5	Nitrogen Metabolism	Global Nitrogen Regulation
+87	5	Uncharacterized	Uncharacterized III
+88	5	Carbon Metabolism	Methyl-alpha-D-xylopyranoside Utilization
+89	5	Stress	DNA Damage Response
+90	4	Uncharacterized	Uncharacterized IV
+91	4	Stress	Metal Related Stress
+92	4	Carbon Metabolism	Saccharic Acid Utilization
+93	3	Stress	EnvZ Stress Response
+94	2	Stress	Stringent Response
+95	2	Uncharacterized	Uncharacterized V
+96	2	Nitrogen Metabolism	N-alpha-Acetyl-L-Glutamate Utilization
+97	2	Carbon Metabolism	Fatty Acid Utilization II
