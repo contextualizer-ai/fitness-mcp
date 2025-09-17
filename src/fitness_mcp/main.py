@@ -561,6 +561,22 @@ class FitnessDataLoader:
 
 
 class PairsDataLoader:
+    """
+    Loads gene-condition pairs with significant fitness values from a tab-separated file.
+
+    Only pairs where the absolute fitness value (|value|) exceeds a threshold of 2 are included.
+    This threshold is used to identify gene knockouts or conditions that have a strong effect
+    on fitness, filtering out minor or insignificant changes. The data file
+    'fit_t_pairs_threshold_2_long.tab' is pre-filtered to include only these significant pairs.
+
+    Attributes:
+        data_file: Path to the pairs data file (default: "data/fit_t_pairs_threshold_2_long.tab")
+        gene_to_conditions: Mapping from gene locus tag to list of conditions with significant fitness
+        condition_to_genes: Mapping from condition to list of genes with significant fitness
+        loaded: Whether the data has been loaded
+        _mtime: Last modification time of the data file
+        _lock: Threading lock for safe concurrent access
+    """
     def __init__(self, data_file: str = "data/fit_t_pairs_threshold_2_long.tab"):
         """Initialize the pairs data loader.
 
