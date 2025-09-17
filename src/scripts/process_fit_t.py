@@ -56,10 +56,11 @@ def process_fit_t_file(input_path, output_path, threshold=4):
 
 
 def main():
-    # Default paths
+    # Default paths and threshold
     project_root = Path(__file__).parent.parent.parent
     input_file = project_root / 'data' / 'fit_t.tab'
-    output_file = project_root / 'data' / 'fit_t_pairs.tab'
+    threshold = 2
+    output_file = project_root / 'data' / f'fit_t_pairs_threshold_{threshold}.tab'
     
     # Check if input file exists
     if not input_file.exists():
@@ -67,7 +68,7 @@ def main():
         sys.exit(1)
     
     # Process the file
-    process_fit_t_file(input_file, output_file)
+    process_fit_t_file(input_file, output_file, threshold)
 
 
 if __name__ == '__main__':
