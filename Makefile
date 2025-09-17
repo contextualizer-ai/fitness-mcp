@@ -162,17 +162,74 @@ test-claude-mcp:
 		--print "Test the fitness-mcp by listing available tools and then search for genes containing 'ribosome' and return the top 3 results" \
 		2>&1 | tee claude-mcp-test.log
 
-# Simple Claude demo with prompt file
-demo-claude-code: prompts/fitness-demo-prompt.txt ## Run Claude Code fitness analysis demo  
-	@echo "🧬 Running Claude Code fitness analysis demo..."
+# Analyze specific gene function using fitness data (Atu3150 lactose transporter example)
+demo-atu3150-function: prompts/fitness-demo-prompt.txt ## Analyze what Atu3150 does using fitness data
+	@echo "🧬 Analyzing Atu3150 gene function using fitness data..."
+	@echo "This demo shows how fitness analysis reveals Atu3150 is a lactose transporter"
 	claude \
 		--debug \
 		--verbose \
 		--mcp-config .mcp.json \
 		--dangerously-skip-permissions \
 		--print "$(shell cat prompts/fitness-demo-prompt.txt)" \
-		2>&1 | tee claude-fitness-demo.log
-	@echo "✅ Check claude-fitness-demo.log for results"
+		2>&1 | tee atu3150-function-analysis.log
+	@echo "✅ Check atu3150-function-analysis.log for biological insights"
+
+# Comprehensive biological analysis showcasing all fitness MCP capabilities
+demo-biological-analysis: prompts/comprehensive-fitness-demo.txt ## Comprehensive biological gene analysis
+	@echo "🧬 Running comprehensive biological analysis demo..."
+	@echo "This demo showcases:"
+	@echo "  - Gene function analysis through fitness patterns"
+	@echo "  - Essential gene identification in specific conditions"
+	@echo "  - Gene-condition network relationships" 
+	@echo "  - Functional module analysis"
+	@echo "  - Cross-referencing annotations with experimental data"
+	claude \
+		--debug \
+		--verbose \
+		--mcp-config .mcp.json \
+		--dangerously-skip-permissions \
+		--output-format json \
+		--print "$(shell cat prompts/comprehensive-fitness-demo.txt)" \
+		2>&1 | tee biological-analysis-demo.log
+	@echo "✅ Check biological-analysis-demo.log for comprehensive analysis results"
+
+# Gene-condition network expansion and interaction analysis
+demo-network-expansion: prompts/network-analysis-demo.txt ## Analyze gene-condition interaction networks
+	@echo "🔗 Running gene-condition network expansion demo..."
+	@echo "This demo showcases:"
+	@echo "  - Gene-condition fitness relationships"
+	@echo "  - Two-hop network expansion (genes→conditions→genes)"
+	@echo "  - Biological network interpretation"
+	@echo "  - Functional relationship discovery"
+	claude \
+		--debug \
+		--verbose \
+		--mcp-config .mcp.json \
+		--dangerously-skip-permissions \
+		--output-format json \
+		--print "$(shell cat prompts/network-analysis-demo.txt)" \
+		2>&1 | tee network-expansion-demo.log
+	@echo "✅ Check network-expansion-demo.log for network analysis results"
+
+# Show all available Claude Code demos
+demo-help: ## Show all available Claude Code demo options
+	@echo "🧬 FITNESS-MCP CLAUDE CODE DEMOS"
+	@echo "================================"
+	@echo ""
+	@echo "📊 Available demo targets:"
+	@echo "  make demo-atu3150-function   - Analyze Atu3150 gene function using fitness data"
+	@echo "  make demo-biological-analysis - Comprehensive biological gene analysis"
+	@echo "  make demo-network-expansion  - Analyze gene-condition interaction networks"
+	@echo "  make demo-claude-mcp         - Test MCP protocol integration"
+	@echo ""
+	@echo "🎯 Each demo creates a log file with results for analysis"
+	@echo "💡 Use --output-format json for structured data output"
+
+# Backward compatibility aliases (deprecated - use new names above)
+demo-claude-code: demo-atu3150-function
+demo-claude-comprehensive: demo-biological-analysis  
+demo-claude-network: demo-network-expansion
 
 # FITNESS MCP - Claude Desktop config:
 #   Add to ~/Library/Application Support/Claude/claude_desktop_config.json:

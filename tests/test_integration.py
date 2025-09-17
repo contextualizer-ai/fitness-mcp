@@ -230,11 +230,11 @@ class TestIntegrationWithRealData:
                 {
                     "condition": "beneficial_cond",
                     "fitness": 0.8,
-                },  # Gene benefits growth
+                },  # Positive fitness: gene inhibits growth when present
                 {
                     "condition": "inhibitory_cond",
                     "fitness": -0.8,
-                },  # Gene inhibits growth
+                },  # Negative fitness: gene is essential for growth
                 {"condition": "neutral_cond1", "fitness": 0.1},  # Neutral
                 {"condition": "neutral_cond2", "fitness": -0.1},  # Neutral
                 {"condition": "missing_data", "fitness": None},  # No data
@@ -250,27 +250,31 @@ class TestIntegrationWithRealData:
             assert "analysis" in result
 
             analysis = result["analysis"]
-            assert "conditions_where_gene_benefits_growth" in analysis
+            assert "conditions_where_gene_is_essential" in analysis
             assert "conditions_where_gene_inhibits_growth" in analysis
             assert "neutral_conditions" in analysis
             assert "summary" in analysis
 
             # Verify categorization
-            beneficial = analysis["conditions_where_gene_benefits_growth"]
+            essential = analysis["conditions_where_gene_is_essential"]
             inhibitory = analysis["conditions_where_gene_inhibits_growth"]
             neutral = analysis["neutral_conditions"]
 
-            assert len(beneficial) == 1
-            assert beneficial[0]["fitness"] == 0.8
+            # essential contains negative fitness (gene is essential when knocked out)
+            assert len(essential) == 1
+            assert essential[0]["fitness"] == -0.8
+            assert essential[0]["condition"] == "inhibitory_cond"
 
+            # inhibitory contains positive fitness (gene inhibits growth when present)
             assert len(inhibitory) == 1
-            assert inhibitory[0]["fitness"] == -0.8
+            assert inhibitory[0]["fitness"] == 0.8
+            assert inhibitory[0]["condition"] == "beneficial_cond"
 
             assert len(neutral) == 2
 
             # Verify summary
             summary = analysis["summary"]
-            assert summary["beneficial_count"] == 1
+            assert summary["essential_count"] == 1
             assert summary["inhibitory_count"] == 1
             assert summary["neutral_count"] == 2
             assert summary["total_conditions_tested"] == 4  # Excludes None values
