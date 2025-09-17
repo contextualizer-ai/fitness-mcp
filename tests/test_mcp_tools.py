@@ -554,8 +554,14 @@ class TestComplexAnalysisFunctions:
                 "description": "Test gene",
             },
             "fitness_data": [
-                {"condition": "beneficial_cond", "fitness": 0.8},  # Positive: gene inhibits growth when present
-                {"condition": "inhibitory_cond", "fitness": -0.8},  # Negative: gene is essential for growth
+                {
+                    "condition": "beneficial_cond",
+                    "fitness": 0.8,
+                },  # Positive: gene inhibits growth when present
+                {
+                    "condition": "inhibitory_cond",
+                    "fitness": -0.8,
+                },  # Negative: gene is essential for growth
                 {"condition": "neutral_cond", "fitness": 0.1},  # Neutral
                 {"condition": "no_data_cond", "fitness": None},  # No data
             ],
