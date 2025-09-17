@@ -563,7 +563,7 @@ class FitnessDataLoader:
 class PairsDataLoader:
     def __init__(self, data_file: str = "data/fit_t_pairs_threshold_2_long.tab"):
         """Initialize the pairs data loader.
-        
+
         Args:
             data_file: Path to the pairs data file
         """
@@ -573,7 +573,7 @@ class PairsDataLoader:
         self.loaded = False
         self._mtime = -1.0
         self._lock = threading.RLock()
-    
+
     def _needs_reload(self) -> bool:
         """Check if the data file has been modified since last load."""
         try:
@@ -581,65 +581,63 @@ class PairsDataLoader:
         except OSError:
             return False
         return not self.loaded or mtime != self._mtime
-    
+
     def load_data(self) -> None:
         """Load the pairs data from the tab-separated file."""
         with self._lock:
             if not self._needs_reload():
                 return
-            
+
             if not os.path.exists(self.data_file):
                 raise FileNotFoundError(f"Pairs data file not found: {self.data_file}")
-            
+
             # Clear existing data
             self.gene_to_conditions.clear()
             self.condition_to_genes.clear()
-            
+
             with open(self.data_file, "r") as f:
                 reader = csv.DictReader(f, delimiter="\t")
-                
+
                 for row in reader:
                     gene_id = row["gene_id"]
                     condition_id = row["condition_id"]
                     value = float(row["value"])
-                    
+
                     # Index by gene
                     if gene_id not in self.gene_to_conditions:
                         self.gene_to_conditions[gene_id] = []
-                    self.gene_to_conditions[gene_id].append({
-                        "condition": condition_id,
-                        "value": value
-                    })
-                    
+                    self.gene_to_conditions[gene_id].append(
+                        {"condition": condition_id, "value": value}
+                    )
+
                     # Index by condition
                     if condition_id not in self.condition_to_genes:
                         self.condition_to_genes[condition_id] = []
-                    self.condition_to_genes[condition_id].append({
-                        "gene": gene_id,
-                        "value": value
-                    })
-            
+                    self.condition_to_genes[condition_id].append(
+                        {"gene": gene_id, "value": value}
+                    )
+
             self.loaded = True
             self._mtime = os.path.getmtime(self.data_file)
-    
+
     def get_conditions_for_gene(self, gene_id: str) -> List[Dict[str, Any]]:
         """Get all conditions where a gene has significant fitness values (|value| > 2).
-        
+
         Args:
             gene_id: Gene locus tag
-            
+
         Returns:
             List of conditions with their fitness values
         """
         self.load_data()
         return self.gene_to_conditions.get(gene_id, [])
-    
+
     def get_genes_for_condition(self, condition_id: str) -> List[Dict[str, Any]]:
         """Get all genes with significant fitness values (|value| > 2) for a condition.
-        
+
         Args:
             condition_id: Condition identifier
-            
+
         Returns:
             List of genes with their fitness values
         """
@@ -1010,123 +1008,133 @@ def get_all_modules() -> List[Dict[str, Any]]:
 def get_conditions_for_gene(gene_id: str) -> Dict[str, Any]:
     """
     Get all conditions where a gene has significant fitness values (|value| > 2).
-    
+
     Args:
         gene_id: Gene locus ID (e.g., 'Atu0001')
-        
+
     Returns:
         Dict containing gene_id and list of conditions with their fitness values
     """
     conditions = pairs_loader.get_conditions_for_gene(gene_id)
-    
+
     if not conditions:
         return {"error": f"No significant conditions found for gene {gene_id}"}
-    
+
     # Sort by absolute value of fitness score
     conditions.sort(key=lambda x: abs(x["value"]), reverse=True)
-    
+
     return {
         "gene_id": gene_id,
         "conditions": conditions,
         "total_conditions": len(conditions),
-        "interpretation": "These are conditions where the gene knockout has significant fitness effects (|value| > 2)"
+        "interpretation": "These are conditions where the gene knockout has significant fitness effects (|value| > 2)",
     }
 
 
 def get_genes_for_condition(condition_id: str) -> Dict[str, Any]:
     """
     Get all genes with significant fitness values (|value| > 2) for a condition.
-    
+
     Args:
         condition_id: Condition identifier (e.g., 'set10IT004 D,L-Malic Acid (C)')
-        
+
     Returns:
         Dict containing condition_id and list of genes with their fitness values
     """
     genes = pairs_loader.get_genes_for_condition(condition_id)
-    
+
     if not genes:
-        return {"error": f"No genes with significant fitness values found for condition {condition_id}"}
-    
+        return {
+            "error": f"No genes with significant fitness values found for condition {condition_id}"
+        }
+
     # Sort by absolute value of fitness score
     genes.sort(key=lambda x: abs(x["value"]), reverse=True)
-    
+
     return {
         "condition_id": condition_id,
         "genes": genes,
         "total_genes": len(genes),
-        "interpretation": "These are genes where knockout has significant fitness effects (|value| > 2) in this condition"
+        "interpretation": "These are genes where knockout has significant fitness effects (|value| > 2) in this condition",
     }
 
 
 def expand_gene_condition_network(gene_id: str, condition_id: str) -> Dict[str, Any]:
     """
     Perform a two-hop expansion from a gene-condition pair to find related genes and conditions.
-    
+
     Starting from a specific gene-condition pair, this function:
     1. Finds all conditions where the gene has significant fitness values
     2. Finds all genes that have significant fitness values in the condition
     3. Expands to find all conditions for the gene set and all genes for the condition set
-    
+
     Args:
         gene_id: Gene locus ID (e.g., 'Atu0001')
         condition_id: Condition identifier (e.g., 'set10IT004 D,L-Malic Acid (C)')
-        
+
     Returns:
         Dict containing the expanded network of related genes and conditions
     """
     pairs_loader.load_data()
-    
+
     # Check if the gene-condition pair exists
     gene_conditions = pairs_loader.get_conditions_for_gene(gene_id)
     if not any(c["condition"] == condition_id for c in gene_conditions):
-        return {"error": f"No significant fitness value found for gene {gene_id} in condition {condition_id}"}
-    
+        return {
+            "error": f"No significant fitness value found for gene {gene_id} in condition {condition_id}"
+        }
+
     # Step 1: Get all conditions for this gene (first hop from gene)
     conditions_for_gene = {c["condition"] for c in gene_conditions}
-    
+
     # Step 2: Get all genes for this condition (first hop from condition)
     condition_genes = pairs_loader.get_genes_for_condition(condition_id)
     genes_for_condition = {g["gene"] for g in condition_genes}
-    
+
     # Step 3: Expand - get all genes for the condition set
-    all_genes = set()
+    all_genes: set[str] = set()
     for cond in conditions_for_gene:
         cond_genes = pairs_loader.get_genes_for_condition(cond)
         all_genes.update(g["gene"] for g in cond_genes)
-    
+
     # Step 4: Expand - get all conditions for the gene set
-    all_conditions = set()
+    all_conditions: set[str] = set()
     for gene in genes_for_condition:
         gene_conds = pairs_loader.get_conditions_for_gene(gene)
         all_conditions.update(c["condition"] for c in gene_conds)
-    
+
     # Get the specific fitness value for the query pair
-    query_value = next((c["value"] for c in gene_conditions if c["condition"] == condition_id), None)
-    
+    query_value = next(
+        (c["value"] for c in gene_conditions if c["condition"] == condition_id), None
+    )
+
     return {
         "query": {
             "gene_id": gene_id,
             "condition_id": condition_id,
-            "fitness_value": query_value
+            "fitness_value": query_value,
         },
         "first_hop": {
             "conditions_for_query_gene": sorted(conditions_for_gene),
             "genes_for_query_condition": sorted(genes_for_condition),
             "num_conditions": len(conditions_for_gene),
-            "num_genes": len(genes_for_condition)
+            "num_genes": len(genes_for_condition),
         },
         "second_hop": {
             "all_genes_in_network": sorted(all_genes),
             "all_conditions_in_network": sorted(all_conditions),
             "num_total_genes": len(all_genes),
-            "num_total_conditions": len(all_conditions)
+            "num_total_conditions": len(all_conditions),
         },
         "network_size": {
-            "gene_expansion_factor": len(all_genes) / len(genes_for_condition) if genes_for_condition else 0,
-            "condition_expansion_factor": len(all_conditions) / len(conditions_for_gene) if conditions_for_gene else 0
+            "gene_expansion_factor": len(all_genes) / len(genes_for_condition)
+            if genes_for_condition
+            else 0,
+            "condition_expansion_factor": len(all_conditions) / len(conditions_for_gene)
+            if conditions_for_gene
+            else 0,
         },
-        "interpretation": "This network shows genes and conditions related through significant fitness effects"
+        "interpretation": "This network shows genes and conditions related through significant fitness effects",
     }
 
 

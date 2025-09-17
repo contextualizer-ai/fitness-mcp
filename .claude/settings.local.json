@@ -12,7 +12,11 @@
       "Bash(git fetch:*)",
       "Bash(git merge:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(git rm:*)",
+      "Bash(git add:*)",
+      "Bash(git mv:*)",
+      "Bash(make:*)"
     ],
     "defaultMode": "acceptEdits"
   }

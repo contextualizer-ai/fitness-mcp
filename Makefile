@@ -92,23 +92,39 @@ demo-biological:
 # MCP Server testing
 test-mcp:
 	@echo "Testing MCP protocol handshake..."
-	@(echo '{"jsonrpc": "2.0", "method": "initialize", "params": {"protocolVersion": "2025-03-26", "capabilities": {"tools": {}}, "clientInfo": {"name": "test-client", "version": "1.0.0"}}, "id": 1}'; \
+	@if command -v timeout >/dev/null 2>&1; then \
+		TIMEOUT_CMD="timeout"; \
+	elif command -v gtimeout >/dev/null 2>&1; then \
+		TIMEOUT_CMD="gtimeout"; \
+	else \
+		echo "Warning: timeout command not found, skipping timeout"; \
+		TIMEOUT_CMD=""; \
+	fi; \
+	(echo '{"jsonrpc": "2.0", "method": "initialize", "params": {"protocolVersion": "2025-03-26", "capabilities": {"tools": {}}, "clientInfo": {"name": "test-client", "version": "1.0.0"}}, "id": 1}'; \
 	 sleep 0.1; \
 	 echo '{"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}}'; \
 	 sleep 0.1; \
 	 echo '{"jsonrpc": "2.0", "method": "tools/list", "id": 2}') | \
-	timeout 5 uv run fitness-mcp
+	if [ -n "$$TIMEOUT_CMD" ]; then $$TIMEOUT_CMD 5 uv run fitness-mcp; else uv run fitness-mcp & PID=$$!; sleep 5; kill $$PID 2>/dev/null || true; fi
 
 test-mcp-extended:
 	@echo "Testing MCP protocol with fitness analysis..."
-	@(echo '{"jsonrpc": "2.0", "method": "initialize", "params": {"protocolVersion": "2025-03-26", "capabilities": {"tools": {}}, "clientInfo": {"name": "test-client", "version": "1.0.0"}}, "id": 1}'; \
+	@if command -v timeout >/dev/null 2>&1; then \
+		TIMEOUT_CMD="timeout"; \
+	elif command -v gtimeout >/dev/null 2>&1; then \
+		TIMEOUT_CMD="gtimeout"; \
+	else \
+		echo "Warning: timeout command not found, skipping timeout"; \
+		TIMEOUT_CMD=""; \
+	fi; \
+	(echo '{"jsonrpc": "2.0", "method": "initialize", "params": {"protocolVersion": "2025-03-26", "capabilities": {"tools": {}}, "clientInfo": {"name": "test-client", "version": "1.0.0"}}, "id": 1}'; \
 	 sleep 0.1; \
 	 echo '{"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}}'; \
 	 sleep 0.1; \
 	 echo '{"jsonrpc": "2.0", "method": "tools/call", "params": {"name": "search_genes", "arguments": {"query": "ribosome", "limit": 3}}, "id": 3}'; \
 	 sleep 0.1; \
 	 echo '{"jsonrpc": "2.0", "method": "tools/call", "params": {"name": "find_essential_genes", "arguments": {"condition_filter": "pH", "min_fitness_threshold": 0.5, "limit": 2}}, "id": 4}') | \
-	timeout 10 uv run fitness-mcp
+	if [ -n "$$TIMEOUT_CMD" ]; then $$TIMEOUT_CMD 10 uv run fitness-mcp; else uv run fitness-mcp & PID=$$!; sleep 10; kill $$PID 2>/dev/null || true; fi
 
 # Test version flag
 test-version:
