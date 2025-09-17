@@ -1,12 +1,4 @@
-You have access to a comprehensive fitness MCP for Agrobacterium gene knockout analysis with advanced network analysis capabilities.
-
-Demonstrate the full power of this MCP by performing the following analysis sequence:
-
-1. Search for genes related to "ribosome" (limit to 2 results)
-2. For the first gene found, get its fitness data and identify conditions where it shows strong effects
-3. Find genes that are essential in stress conditions (limit to 2)
-4. For one gene-condition pair with significant fitness effects, perform network expansion analysis
-5. Search for modules related to "ribosome" (limit to 2)
+What does Atu3150 do?
 
 Your output must be a single valid JSON object with exactly these top-level keys:
 
