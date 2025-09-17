@@ -174,6 +174,56 @@ demo-claude-code: prompts/fitness-demo-prompt.txt ## Run Claude Code fitness ana
 		2>&1 | tee claude-fitness-demo.log
 	@echo "✅ Check claude-fitness-demo.log for results"
 
+# Comprehensive Claude Code demo showcasing all fitness MCP capabilities
+demo-claude-comprehensive: prompts/comprehensive-fitness-demo.txt ## Run comprehensive Claude Code fitness MCP demo
+	@echo "🧬 Running comprehensive Claude Code fitness MCP demo..."
+	@echo "This demo showcases:"
+	@echo "  - Gene search and fitness analysis"
+	@echo "  - Essential gene identification"
+	@echo "  - Network expansion analysis" 
+	@echo "  - Module functionality"
+	@echo "  - Biological insight generation"
+	claude \
+		--debug \
+		--verbose \
+		--mcp-config .mcp.json \
+		--dangerously-skip-permissions \
+		--output-format json \
+		--print "$(shell cat prompts/comprehensive-fitness-demo.txt)" \
+		2>&1 | tee claude-comprehensive-demo.log
+	@echo "✅ Check claude-comprehensive-demo.log for comprehensive analysis results"
+
+# Network analysis demo showcasing gene-condition network expansion
+demo-claude-network: prompts/network-analysis-demo.txt ## Run Claude Code network analysis demo
+	@echo "🔗 Running Claude Code network analysis demo..."
+	@echo "This demo showcases:"
+	@echo "  - Gene-condition pair analysis"
+	@echo "  - Two-hop network expansion"
+	@echo "  - Biological network interpretation"
+	claude \
+		--debug \
+		--verbose \
+		--mcp-config .mcp.json \
+		--dangerously-skip-permissions \
+		--output-format json \
+		--print "$(shell cat prompts/network-analysis-demo.txt)" \
+		2>&1 | tee claude-network-demo.log
+	@echo "✅ Check claude-network-demo.log for network analysis results"
+
+# Show all available Claude Code demos
+demo-help: ## Show all available Claude Code demo options
+	@echo "🧬 FITNESS-MCP CLAUDE CODE DEMOS"
+	@echo "================================"
+	@echo ""
+	@echo "📊 Available demo targets:"
+	@echo "  make demo-claude-code        - Basic gene search demo"
+	@echo "  make demo-claude-comprehensive - Full MCP capabilities showcase"
+	@echo "  make demo-claude-network     - Gene-condition network analysis"
+	@echo "  make demo-claude-mcp         - Test MCP protocol integration"
+	@echo ""
+	@echo "🎯 Each demo creates a log file with results for analysis"
+	@echo "💡 Use --output-format json for structured data output"
+
 # FITNESS MCP - Claude Desktop config:
 #   Add to ~/Library/Application Support/Claude/claude_desktop_config.json:
 #   {
