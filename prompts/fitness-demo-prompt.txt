@@ -1,14 +1,1 @@
-What does Atu3150 do?
-
-Your output must be a single valid JSON object only.
-Do not include markdown code fences.
-Do not include any commentary, explanations, or extra text.
-
-The JSON object must have exactly these top-level keys:
-
-"search_results": array of objects with fields:
-"locusId": string
-"sysName": string  
-"description": string
-
-"gene_count": number
+What does Atu3150 do? Please analyze its fitness data to understand its specific biological function, not just its annotation.
