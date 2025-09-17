@@ -1,0 +1,16 @@
+You have access to a fitness MCP for Agrobacterium gene knockout analysis.
+
+Search for genes containing "ribosome" and return the top 3 results.
+
+Your output must be a single valid JSON object only.
+Do not include markdown code fences.
+Do not include any commentary, explanations, or extra text.
+
+The JSON object must have exactly these top-level keys:
+
+"search_results": array of objects with fields:
+"locusId": string
+"sysName": string  
+"description": string
+
+"gene_count": number

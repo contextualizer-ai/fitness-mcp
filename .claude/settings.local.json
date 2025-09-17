@@ -1,8 +1,10 @@
 {
   "permissions": {
-    "defaultMode": "acceptEdits",
     "allow": [
-      "Bash(python:*)"
-    ]
+      "Bash(python:*)",
+      "Read(//Users/MAM/Documents/gitrepos/compare-mcps/**)",
+      "Read(//Users/MAM/Documents/gitrepos/bertron/bertron-mcp/**)"
+    ],
+    "defaultMode": "acceptEdits"
   }
 }

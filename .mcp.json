@@ -1,0 +1,16 @@
+{
+    "mcpServers":
+    {
+        "fitness-mcp":
+        {
+            "type": "stdio",
+            "command": "uv",
+            "args":
+            [
+                "run",
+                "fitness-mcp"
+            ],
+            "cwd": "."
+        }
+    }
+}
