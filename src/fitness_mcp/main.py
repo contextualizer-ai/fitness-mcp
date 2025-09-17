@@ -20,6 +20,188 @@ import threading
 from functools import lru_cache
 
 
+class ModuleDataLoader:
+    def __init__(self, modules_file: str = "data/RbTnSeq_modules_t1e-7.csv", 
+                 meta_file: str = "data/module_meta.tsv"):
+        """Initialize the module data loader.
+        
+        Args:
+            modules_file: Path to the modules CSV file
+            meta_file: Path to the module metadata TSV file
+        """
+        self.modules_file = modules_file
+        self.meta_file = meta_file
+        self.gene_to_modules: Dict[str, List[Dict[str, Any]]] = {}
+        self.module_to_genes: Dict[int, List[Dict[str, Any]]] = {}
+        self.module_meta: Dict[int, Dict[str, Any]] = {}
+        self.loaded = False
+        self._modules_mtime = -1.0
+        self._meta_mtime = -1.0
+        self._lock = threading.RLock()
+        
+    def _needs_reload(self) -> bool:
+        """Check if either data file has been modified since last load."""
+        try:
+            modules_mtime = os.path.getmtime(self.modules_file)
+            meta_mtime = os.path.getmtime(self.meta_file)
+        except OSError:
+            return False
+        return (
+            not self.loaded or 
+            modules_mtime != self._modules_mtime or 
+            meta_mtime != self._meta_mtime
+        )
+
+    def load_data(self) -> None:
+        """Load the module data from files with thread safety."""
+        with self._lock:
+            if not self._needs_reload():
+                return
+                
+            # Clear cache when reloading
+            self._clear_caches()
+            
+            # Load module metadata first
+            if not os.path.exists(self.meta_file):
+                raise OSError(f"Module metadata file not found: {self.meta_file}")
+            
+        with open(self.meta_file, 'r') as f:
+            reader = csv.DictReader(f, delimiter='\t')
+            for row in reader:
+                module_id = int(row['module'])
+                self.module_meta[module_id] = {
+                    'module_id': module_id,
+                    'name': row['name'],
+                    'category': row['category'],
+                    'count': int(row['count'])
+                }
+        
+            # Load gene-module assignments
+            if not os.path.exists(self.modules_file):
+                raise OSError(f"Modules file not found: {self.modules_file}")
+                
+            with open(self.modules_file, 'r') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    module_id = int(row['module'])
+                    locus_tag = row['locus_tag']
+                    gene_weight = float(row['gene_weight']) if row['gene_weight'] else 0.0
+                    
+                    gene_info = {
+                        'locus_tag': locus_tag,
+                        'module_id': module_id,
+                        'gene_weight': gene_weight,
+                        'product': row.get('product', ''),
+                        'description': row.get('Description', ''),
+                        'preferred_name': row.get('Preferred_name', ''),
+                        'protein_names': row.get('Protein names', ''),
+                        'go_terms': row.get('Gene Ontology (GO)', '')
+                    }
+                    
+                    # Add module metadata to gene info
+                    if module_id in self.module_meta:
+                        gene_info.update({
+                            'module_name': self.module_meta[module_id]['name'],
+                            'module_category': self.module_meta[module_id]['category']
+                        })
+                    
+                    # Index by gene
+                    if locus_tag not in self.gene_to_modules:
+                        self.gene_to_modules[locus_tag] = []
+                    self.gene_to_modules[locus_tag].append(gene_info)
+                    
+                    # Index by module
+                    if module_id not in self.module_to_genes:
+                        self.module_to_genes[module_id] = []
+                    self.module_to_genes[module_id].append(gene_info)
+                    
+            self.loaded = True
+            self._modules_mtime = os.path.getmtime(self.modules_file)
+            self._meta_mtime = os.path.getmtime(self.meta_file)
+    
+    def _clear_caches(self) -> None:
+        """Clear LRU caches when data is reloaded."""
+        self._cached_search_modules.cache_clear()
+        
+    @lru_cache(maxsize=128)
+    def _cached_search_modules(self, query: str, limit: int, data_version: float) -> List[Dict[str, Any]]:
+        """Cached implementation of module search."""
+        query = query.lower()
+        matches = []
+        
+        for module_id, meta in self.module_meta.items():
+            if (query in meta['name'].lower() or 
+                query in meta['category'].lower()):
+                
+                genes = self.module_to_genes.get(module_id, [])
+                matches.append({
+                    'module': meta,
+                    'genes': genes,
+                    'gene_count': len(genes)
+                })
+                
+                if len(matches) >= limit:
+                    break
+                    
+        return matches
+        
+    def get_modules_for_gene(self, gene_id: str) -> List[Dict[str, Any]]:
+        """Get module information for a specific gene.
+        
+        Args:
+            gene_id: Gene locus tag
+            
+        Returns:
+            List of modules containing this gene
+        """
+        self.load_data()
+        return self.gene_to_modules.get(gene_id, [])
+        
+    def get_genes_in_module(self, module_id: int) -> Dict[str, Any]:
+        """Get all genes in a specific module.
+        
+        Args:
+            module_id: Module ID number
+            
+        Returns:
+            Dictionary with module info and gene list
+        """
+        self.load_data()
+        
+        if module_id not in self.module_meta:
+            return {'error': f'Module {module_id} not found'}
+            
+        genes = self.module_to_genes.get(module_id, [])
+        
+        return {
+            'module': self.module_meta[module_id],
+            'genes': genes,
+            'gene_count': len(genes)
+        }
+        
+    def search_modules_by_name(self, query: str, limit: int = 10) -> List[Dict[str, Any]]:
+        """Search modules by name or category.
+        
+        Args:
+            query: Search term
+            limit: Maximum results
+            
+        Returns:
+            List of matching modules with gene lists
+        """
+        self.load_data()
+        return self._cached_search_modules(query, limit, self._modules_mtime)
+        
+    def get_all_modules(self) -> List[Dict[str, Any]]:
+        """Get list of all modules with basic info.
+        
+        Returns:
+            List of all modules
+        """
+        self.load_data()
+        return list(self.module_meta.values())
+
+
 class FitnessDataLoader:
     def __init__(
         self,
@@ -369,8 +551,9 @@ class FitnessDataLoader:
         }
 
 
-# Global data loader instance
+# Global data loader instances
 fitness_loader = FitnessDataLoader()
+module_loader = ModuleDataLoader()
 
 
 # MCP TOOL SECTION
@@ -672,6 +855,72 @@ def analyze_gene_fitness(
     }
 
 
+def get_gene_modules(
+    gene_id: str
+) -> Dict[str, Any]:
+    """
+    Get module information for a specific gene/locus.
+
+    Args:
+        gene_id: Gene locus tag (e.g., 'Atu0001')
+
+    Returns:
+        Dict containing modules that include this gene
+    """
+    modules = module_loader.get_modules_for_gene(gene_id)
+    
+    if not modules:
+        return {'error': f'No modules found for gene {gene_id}'}
+    
+    return {
+        'gene_id': gene_id,
+        'modules': modules,
+        'module_count': len(modules)
+    }
+
+
+def get_module_genes(
+    module_id: int
+) -> Dict[str, Any]:
+    """
+    Get all genes in a specific module.
+
+    Args:
+        module_id: Module ID number
+
+    Returns:
+        Dict containing module info and all genes in the module
+    """
+    return module_loader.get_genes_in_module(module_id)
+
+
+def search_modules(
+    query: str,
+    limit: int = 10
+) -> List[Dict[str, Any]]:
+    """
+    Search for modules by name or category.
+
+    Args:
+        query: Search term to match against module names or categories
+        limit: Maximum number of results to return (default: 10)
+
+    Returns:
+        List of matching modules with their genes
+    """
+    return module_loader.search_modules_by_name(query, limit)
+
+
+def get_all_modules() -> List[Dict[str, Any]]:
+    """
+    Get list of all available modules.
+
+    Returns:
+        List of all modules with basic information
+    """
+    return module_loader.get_all_modules()
+
+
 # MAIN SECTION
 # Create the FastMCP instance
 mcp = FastMCP("fitness_mcp")
@@ -686,6 +935,10 @@ mcp.tool(interpret_fitness_score)
 mcp.tool(find_essential_genes)
 mcp.tool(find_growth_inhibitor_genes)
 mcp.tool(analyze_gene_fitness)
+mcp.tool(get_gene_modules)
+mcp.tool(get_module_genes)
+mcp.tool(search_modules)
+mcp.tool(get_all_modules)
 
 
 def main() -> None:
