@@ -60,7 +60,7 @@ def main():
     project_root = Path(__file__).parent.parent.parent
     input_file = project_root / 'data' / 'fit_t.tab'
     threshold = 2
-    output_file = project_root / 'data' / f'fit_t_pairs_threshold_{threshold}.tab'
+    output_file = project_root / 'data' / f'fit_t_pairs_threshold_{threshold}_long.tab'
     
     # Check if input file exists
     if not input_file.exists():
