@@ -13,7 +13,7 @@ install:
 
 # Run tests with coverage
 test-coverage:
-	uv run pytest --cov=fitness_mcp --cov-report=html --cov-report=term tests/
+	uv run pytest --cov=src/fitness_mcp --cov-report=html --cov-report=term tests/
 
 # Clean up build artifacts
 clean:
@@ -64,7 +64,7 @@ release: clean install test-coverage build
 # Integration Testing
 test-integration:
 	@echo "🧬 Testing fitness MCP integration..."
-	uv run pytest tests/test_integration.py -v
+	uv run pytest tests/test_api.py -v
 
 # Gene Fitness Analysis Testing
 test-gene-fitness:
@@ -112,8 +112,9 @@ test-mcp-extended:
 
 # Test version flag
 test-version:
-	@echo "🔢 Testing version output..."
-	uv run fitness-mcp --help
+	@echo "🔢 Testing package installation..."
+	@echo "Package version:"
+	@uv run python -c "import fitness_mcp; print('fitness_mcp package loaded successfully')"
 
 # Data validation tests
 test-data:

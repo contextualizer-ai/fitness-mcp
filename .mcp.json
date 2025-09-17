@@ -8,9 +8,9 @@
             "args":
             [
                 "run",
-                "fitness-mcp"
-            ],
-            "cwd": "."
+                "python",
+                "src/fitness_mcp/main.py"
+            ]
         }
     }
 }

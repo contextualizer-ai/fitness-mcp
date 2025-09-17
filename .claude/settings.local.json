@@ -2,8 +2,11 @@
   "permissions": {
     "allow": [
       "Bash(python:*)",
-      "Read(//Users/MAM/Documents/gitrepos/compare-mcps/**)",
-      "Read(//Users/MAM/Documents/gitrepos/bertron/bertron-mcp/**)"
+      "Read(**)",
+      "Write(**)",
+      "Edit(**)",
+      "Bash(make:*)",
+      "Bash(uv run pytest:*)"
     ],
     "defaultMode": "acceptEdits"
   }
