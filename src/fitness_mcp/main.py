@@ -897,6 +897,7 @@ def analyze_gene_fitness(
     gene_id: str,
     min_fitness: Optional[float] = None,
     max_fitness: Optional[float] = None,
+    limit: Optional[int] = 10,
 ) -> Dict[str, Any]:
     """
     Analyze fitness effects for a gene knockout mutant across conditions.
@@ -905,12 +906,13 @@ def analyze_gene_fitness(
         gene_id: Gene locus ID or system name
         min_fitness: Minimum fitness value to include (use negative values to find where gene inhibits growth)
         max_fitness: Maximum fitness value to include (use positive values to find where gene benefits growth)
+        limit: Maximum number of conditions to return per category (default: 10, sorted by absolute fitness)
 
     Returns:
         Dict with gene info and categorized fitness data. Categories indicate:
-        - conditions_where_gene_inhibits_growth: Negative fitness scores
-        - conditions_where_gene_benefits_growth: Positive fitness scores
-        - neutral_conditions: Fitness scores near zero
+        - conditions_where_gene_inhibits_growth: Negative fitness scores (sorted by most negative first)
+        - conditions_where_gene_benefits_growth: Positive fitness scores (sorted by most positive first)
+        - neutral_conditions: Fitness scores near zero (sorted by absolute value)
     """
     fitness_data = fitness_loader.get_gene_fitness(gene_id)
 
@@ -944,6 +946,22 @@ def analyze_gene_fitness(
         else:  # Neutral effect
             neutral.append(item)
 
+    # Sort each category by fitness value and apply limit
+    # Sort gene_inhibits_growth by most negative first (strongest inhibitory effect)
+    gene_inhibits_growth.sort(key=lambda x: x["fitness"])
+    if limit:
+        gene_inhibits_growth = gene_inhibits_growth[:limit]
+    
+    # Sort gene_benefits_growth by most positive first (strongest beneficial effect)  
+    gene_benefits_growth.sort(key=lambda x: x["fitness"], reverse=True)
+    if limit:
+        gene_benefits_growth = gene_benefits_growth[:limit]
+    
+    # Sort neutral by absolute value (closest to zero first)
+    neutral.sort(key=lambda x: abs(x["fitness"]))
+    if limit:
+        neutral = neutral[:limit]
+
     return {
         "gene": fitness_data["gene"],
         "analysis": {
@@ -961,6 +979,7 @@ def analyze_gene_fitness(
                 "inhibitory_count": len(gene_inhibits_growth),
                 "beneficial_count": len(gene_benefits_growth),
                 "neutral_count": len(neutral),
+                "limit_applied": limit,
             },
         },
     }
