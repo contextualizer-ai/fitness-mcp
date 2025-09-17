@@ -36,11 +36,10 @@ class TestIntegrationWithRealData:
             self.meta_file
         )
 
-    @pytest.mark.skipif(
-        not os.path.exists("data/fit_t.tab"), reason="Real fitness data not available"
-    )
     def test_fitness_loader_real_data(self):
         """Test fitness loader with real data files."""
+        if not self.has_fitness_data:
+            pytest.skip("Real fitness data not available")
         # Temporarily override file paths
         original_data_file = fitness_loader.data_file
         original_exp_file = fitness_loader.exp_desc_file
@@ -67,12 +66,10 @@ class TestIntegrationWithRealData:
             fitness_loader.data_file = original_data_file
             fitness_loader.exp_desc_file = original_exp_file
 
-    @pytest.mark.skipif(
-        not os.path.exists("data/RbTnSeq_modules_t1e-7.csv"),
-        reason="Real module data not available",
-    )
     def test_module_loader_real_data(self):
         """Test module loader with real data files."""
+        if not self.has_module_data:
+            pytest.skip("Real module data not available")
         # Temporarily override file paths
         original_modules_file = module_loader.modules_file
         original_meta_file = module_loader.meta_file

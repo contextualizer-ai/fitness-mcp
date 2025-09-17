@@ -1,6 +1,5 @@
 """Tests for MCP tool functions in fitness_mcp.main module."""
 
-import tempfile
 from unittest.mock import patch
 
 
@@ -28,8 +27,6 @@ class TestMCPToolFunctions:
 
     def setup_method(self):
         """Set up test fixtures before each test method."""
-        self.temp_dir = tempfile.mkdtemp()
-
         # Mock data for fitness loader
         self.mock_fitness_data = {
             "Atu0001": {
@@ -97,11 +94,6 @@ class TestMCPToolFunctions:
             1: {"module_id": 1, "name": "Module 1", "category": "Category1", "count": 1}
         }
 
-    def teardown_method(self):
-        """Clean up after each test method."""
-        import shutil
-
-        shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def test_get_gene_info_success(self):
         """Test get_gene_info with existing gene."""
@@ -602,7 +594,7 @@ class TestComplexAnalysisFunctions:
                 {
                     "condition": "cond3",
                     "fitness": 0.5,
-                },  # Should be excluded (above max)
+                },  # Should be included (within range)
                 {"condition": "cond4", "fitness": 0.2},  # Should be included
             ],
         }

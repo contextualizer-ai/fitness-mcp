@@ -4,7 +4,6 @@ import csv
 import os
 import tempfile
 import threading
-import time
 
 
 from src.fitness_mcp.main import FitnessDataLoader, ModuleDataLoader
@@ -134,13 +133,14 @@ class TestFitnessDataLoader:
         loader.load_data()
         assert not loader._needs_reload()
 
-        # Touch file to change mtime
-        time.sleep(0.1)  # Ensure different mtime - increased for more reliable test
+        # Touch file to change mtime deterministically
         with open(self.data_file, "a") as f:
             f.write("# modified")
-
-        # Force change to be detected by clearing mtimes
-        loader._mtime = -1.0
+        
+        # Manually set mtime to a new value to ensure reload is needed
+        current_mtime = os.path.getmtime(self.data_file)
+        os.utime(self.data_file, (current_mtime + 10, current_mtime + 10))
+        
         assert loader._needs_reload()
 
     def test_load_data_missing_files(self):
@@ -536,12 +536,15 @@ class TestModuleDataLoader:
         cache_info = loader._cached_search_modules.cache_info()
         assert cache_info.hits >= 0  # Cache should exist
 
-        # Force reload by changing file mtime
-        time.sleep(0.01)
+        # Force reload by changing file mtime deterministically
         with open(self.modules_file, "a") as f:
             f.write("")
+        
+        # Manually set mtime to a new value to ensure reload is needed
+        current_mtime = os.path.getmtime(self.modules_file)
+        os.utime(self.modules_file, (current_mtime + 2, current_mtime + 2))
 
         # Load again - should clear cache
         loader.load_data()
         new_cache_info = loader._cached_search_modules.cache_info()
-        assert new_cache_info.misses >= cache_info.misses  # Cache should be cleared
+        assert new_cache_info.currsize == 0  # Cache should be cleared (empty)
