@@ -577,6 +577,7 @@ class PairsDataLoader:
         _mtime: Last modification time of the data file
         _lock: Threading lock for safe concurrent access
     """
+
     def __init__(self, data_file: str = "data/fit_t_pairs_threshold_2_long.tab"):
         """Initialize the pairs data loader.
 
@@ -904,24 +905,24 @@ def analyze_gene_fitness(
 
     Args:
         gene_id: Gene locus ID or system name
-        min_fitness: Minimum fitness value to include (use negative values to find where gene inhibits growth)
-        max_fitness: Maximum fitness value to include (use positive values to find where gene benefits growth)
+        min_fitness: Minimum fitness value to include (use negative values to find essential genes)
+        max_fitness: Maximum fitness value to include (use positive values to find growth-inhibiting genes)
         limit: Maximum number of conditions to return per category (default: 10, sorted by absolute fitness)
 
     Returns:
         Dict with gene info and categorized fitness data. Categories indicate:
-        - conditions_where_gene_inhibits_growth: Negative fitness scores (sorted by most negative first)
-        - conditions_where_gene_benefits_growth: Positive fitness scores (sorted by most positive first)
-        - neutral_conditions: Fitness scores near zero (sorted by absolute value)
+        - conditions_where_gene_is_essential: Negative fitness scores (gene knockout reduces fitness, gene is ESSENTIAL)
+        - conditions_where_gene_inhibits_growth: Positive fitness scores (gene knockout improves fitness, gene INHIBITS growth)
+        - neutral_conditions: Fitness scores near zero (gene knockout has minimal effect)
     """
     fitness_data = fitness_loader.get_gene_fitness(gene_id)
 
     if "error" in fitness_data:
         return fitness_data
 
-    # Categorize conditions by fitness effect (corrected interpretation)
-    gene_inhibits_growth = []  # Negative fitness: gene knockout improves fitness
-    gene_benefits_growth = []  # Positive fitness: gene knockout reduces fitness
+    # Categorize conditions by fitness effect
+    essential_conditions = []  # Negative fitness: gene knockout reduces fitness (gene is ESSENTIAL)
+    inhibitory_conditions = []  # Positive fitness: gene knockout improves fitness (gene INHIBITS growth)
     neutral = []  # Near-zero fitness: gene knockout has minimal effect
 
     for item in fitness_data["fitness_data"]:
@@ -937,26 +938,26 @@ def analyze_gene_fitness(
 
         if (
             fitness_val < -0.5
-        ):  # Gene knockout improves fitness (gene normally inhibits growth)
-            gene_inhibits_growth.append(item)
+        ):  # Gene knockout reduces fitness (gene is ESSENTIAL for this condition)
+            essential_conditions.append(item)
         elif (
             fitness_val > 0.5
-        ):  # Gene knockout reduces fitness (gene is beneficial/essential)
-            gene_benefits_growth.append(item)
+        ):  # Gene knockout improves fitness (gene INHIBITS growth in this condition)
+            inhibitory_conditions.append(item)
         else:  # Neutral effect
             neutral.append(item)
 
     # Sort each category by fitness value and apply limit
-    # Sort gene_inhibits_growth by most negative first (strongest inhibitory effect)
-    gene_inhibits_growth.sort(key=lambda x: x["fitness"])
+    # Sort essential_conditions by most negative first (strongest essential effect)
+    essential_conditions.sort(key=lambda x: x["fitness"])
     if limit:
-        gene_inhibits_growth = gene_inhibits_growth[:limit]
-    
-    # Sort gene_benefits_growth by most positive first (strongest beneficial effect)  
-    gene_benefits_growth.sort(key=lambda x: x["fitness"], reverse=True)
+        essential_conditions = essential_conditions[:limit]
+
+    # Sort inhibitory_conditions by most positive first (strongest inhibitory effect)
+    inhibitory_conditions.sort(key=lambda x: x["fitness"], reverse=True)
     if limit:
-        gene_benefits_growth = gene_benefits_growth[:limit]
-    
+        inhibitory_conditions = inhibitory_conditions[:limit]
+
     # Sort neutral by absolute value (closest to zero first)
     neutral.sort(key=lambda x: abs(x["fitness"]))
     if limit:
@@ -965,8 +966,8 @@ def analyze_gene_fitness(
     return {
         "gene": fitness_data["gene"],
         "analysis": {
-            "conditions_where_gene_inhibits_growth": gene_inhibits_growth,
-            "conditions_where_gene_benefits_growth": gene_benefits_growth,
+            "conditions_where_gene_is_essential": essential_conditions,
+            "conditions_where_gene_inhibits_growth": inhibitory_conditions,
             "neutral_conditions": neutral,
             "summary": {
                 "total_conditions_tested": len(
@@ -976,8 +977,8 @@ def analyze_gene_fitness(
                         if x["fitness"] is not None
                     ]
                 ),
-                "inhibitory_count": len(gene_inhibits_growth),
-                "beneficial_count": len(gene_benefits_growth),
+                "essential_count": len(essential_conditions),
+                "inhibitory_count": len(inhibitory_conditions),
                 "neutral_count": len(neutral),
                 "limit_applied": limit,
             },
