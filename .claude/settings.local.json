@@ -6,7 +6,9 @@
       "Write(**)",
       "Edit(**)",
       "Bash(make:*)",
-      "Bash(uv run pytest:*)"
+      "Bash(uv run pytest:*)",
+      "Bash(uv run:*)",
+      "Bash(timeout 5 make test-mcp)"
     ],
     "defaultMode": "acceptEdits"
   }

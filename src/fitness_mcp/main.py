@@ -47,7 +47,7 @@ class FitnessDataLoader:
         try:
             data_mtime = os.path.getmtime(self.data_file)
             exp_mtime = os.path.getmtime(self.exp_desc_file)
-        except FileNotFoundError:
+        except OSError:
             return False
         return (
             not self.loaded or data_mtime != self._mtime or exp_mtime != self._exp_mtime
@@ -353,7 +353,7 @@ class FitnessDataLoader:
             "experimental_group": details["exp_group"],
             "growth_conditions": {
                 "media": details["media"],
-                "temperature": details["temperature"] + "°C"
+                "temperature": str(details["temperature"]) + "°C"
                 if details["temperature"]
                 else "",
                 "pH": details["pH"],
