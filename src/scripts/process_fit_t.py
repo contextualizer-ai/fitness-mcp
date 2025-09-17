@@ -59,7 +59,7 @@ def main():
     # Default paths and threshold
     project_root = Path(__file__).parent.parent.parent
     input_file = project_root / 'data' / 'fit_t.tab'
-    threshold = 2
+    threshold = 4
     output_file = project_root / 'data' / f'fit_t_pairs_threshold_{threshold}_long.tab'
     
     # Check if input file exists
