@@ -9,7 +9,7 @@ from pathlib import Path
 
 def process_fit_t_file(input_path, output_path, threshold=2):
     """
-    Process fit_t.tab file and create pairs for values where |x| > threshold
+    Process fit_t.tab file and create pairs for values where |value| > threshold
     
     Args:
         input_path: Path to input fit_t.tab file
