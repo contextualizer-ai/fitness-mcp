@@ -94,7 +94,6 @@ class TestMCPToolFunctions:
             1: {"module_id": 1, "name": "Module 1", "category": "Category1", "count": 1}
         }
 
-
     def test_get_gene_info_success(self):
         """Test get_gene_info with existing gene."""
         with patch.object(fitness_loader, "get_gene_info") as mock_get:
@@ -297,7 +296,7 @@ class TestMCPToolFunctions:
             assert "analysis" in result
             analysis = result["analysis"]
             assert "conditions_where_gene_inhibits_growth" in analysis
-            assert "conditions_where_gene_benefits_growth" in analysis
+            assert "conditions_where_gene_is_essential" in analysis
             assert "neutral_conditions" in analysis
             assert "summary" in analysis
 
@@ -555,8 +554,8 @@ class TestComplexAnalysisFunctions:
                 "description": "Test gene",
             },
             "fitness_data": [
-                {"condition": "beneficial_cond", "fitness": 0.8},  # Benefits growth
-                {"condition": "inhibitory_cond", "fitness": -0.8},  # Inhibits growth
+                {"condition": "beneficial_cond", "fitness": 0.8},  # Positive: gene inhibits growth when present
+                {"condition": "inhibitory_cond", "fitness": -0.8},  # Negative: gene is essential for growth
                 {"condition": "neutral_cond", "fitness": 0.1},  # Neutral
                 {"condition": "no_data_cond", "fitness": None},  # No data
             ],
@@ -570,13 +569,13 @@ class TestComplexAnalysisFunctions:
             analysis = result["analysis"]
 
             # Should categorize correctly
-            assert len(analysis["conditions_where_gene_benefits_growth"]) == 1
+            assert len(analysis["conditions_where_gene_is_essential"]) == 1
             assert len(analysis["conditions_where_gene_inhibits_growth"]) == 1
             assert len(analysis["neutral_conditions"]) == 1
 
             # Check summary counts
             summary = analysis["summary"]
-            assert summary["beneficial_count"] == 1
+            assert summary["essential_count"] == 1
             assert summary["inhibitory_count"] == 1
             assert summary["neutral_count"] == 1
             assert summary["total_conditions_tested"] == 3  # Excludes None values
@@ -609,7 +608,7 @@ class TestComplexAnalysisFunctions:
 
             # Should only include conditions with fitness in range [0.0, 1.0]
             all_conditions = (
-                analysis["conditions_where_gene_benefits_growth"]
+                analysis["conditions_where_gene_is_essential"]
                 + analysis["conditions_where_gene_inhibits_growth"]
                 + analysis["neutral_conditions"]
             )
