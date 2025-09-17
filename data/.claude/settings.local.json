@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python:*)",
+      "Bash(timeout 5s python -m src.fitness_mcp.main:*)"
+    ],
+    "additionalDirectories": [
+      "/Users/jtr4v/PythonProject/fitness-mcp"
+    ]
+  }
+}

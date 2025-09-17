@@ -1,0 +1,347 @@
+# Fitness MCP Development Guide
+
+This document establishes development patterns and guidelines for the fitness-mcp project. Follow these patterns consistently for all development work.
+
+## Project Overview
+
+The Fitness MCP is a FastMCP server for analyzing gene fitness data from barcoded Agrobacterium mutant libraries. It efficiently handles a 90MB TSV dataset and provides scientific analysis tools for competitive fitness experiments.
+
+## Build & Test Commands
+
+### Development Setup
+- Install dependencies: `uv sync --dev`
+- Run MCP server: `uv run fitness-mcp`
+- Run in global mode: `uvx fitness-mcp`
+
+### Code Quality
+- Lint code: `uv run ruff check src/`
+- Fix lint issues: `uv run ruff check --fix src/`
+- Format code: `uv run ruff format src/`
+- Type check: `uv run mypy src/`
+
+### Testing
+- Run all tests: `uv run pytest`
+- Run specific test: `uv run pytest tests/test_main.py::test_gene_lookup`
+- Run with coverage: `uv run pytest --cov=fitness_mcp`
+
+## Architecture Principles
+
+### Data Loading Best Practices
+The MCP follows TSV best practices for large file handling:
+
+```python
+# ✅ Good: Single shared data loader
+fitness_loader = FitnessDataLoader()  # Global instance shared across tools
+
+# ✅ Good: Thread-safe operations
+with self._lock:
+    if not self._needs_reload():
+        return
+
+# ✅ Good: File change detection
+def _needs_reload(self) -> bool:
+    try:
+        data_mtime = os.path.getmtime(self.data_file)
+        exp_mtime = os.path.getmtime(self.exp_desc_file)
+    except FileNotFoundError:
+        return False
+    return (not self.loaded or 
+            data_mtime != self._mtime or 
+            exp_mtime != self._exp_mtime)
+
+# ✅ Good: LRU caching with data versioning
+@lru_cache(maxsize=256)
+def _cached_search_genes(self, query: str, limit: int, data_version: float):
+    # Expensive operations cached with data file timestamp as key
+```
+
+### Anti-Patterns to Avoid
+
+```python
+# ❌ Bad: Loading data in every tool call
+def search_genes(query):
+    df = pd.read_csv("data/fit_t.tab", sep="\t")  # DON'T DO THIS
+    return df[df['description'].str.contains(query)]
+
+# ❌ Bad: No thread safety
+def load_data(self):
+    if not self.loaded:  # Race condition risk
+        # load data without locks
+
+# ❌ Bad: No caching
+def search_genes(self, query: str):
+    # Expensive search operation without caching
+    matches = []
+    for gene_id, gene_info in self.genes.items():  # Repeated work
+        # ... expensive string matching
+```
+
+## Biological Data Standards
+
+### Fitness Score Interpretation
+**Critical**: Maintain correct biological interpretation throughout codebase:
+
+```python
+# ✅ Good: Correct interpretation in docstrings and code
+"""
+Fitness scores represent gene knockout effects:
+- Negative values: Gene knockout IMPROVES fitness (gene normally inhibits growth)
+- Positive values: Gene knockout REDUCES fitness (gene is beneficial/essential)
+- Values near 0: Gene knockout has MINIMAL effect on fitness
+"""
+
+# ✅ Good: Biologically meaningful variable names
+gene_inhibits_growth = []     # for negative fitness scores
+gene_benefits_growth = []     # for positive fitness scores
+neutral = []                  # for scores near zero
+
+# ❌ Bad: Confusing or backwards interpretation
+beneficial = []   # Ambiguous - beneficial to whom?
+detrimental = []  # Confusing - could mean either direction
+```
+
+### Scientific Accuracy Requirements
+- All docstrings must correctly explain biological meaning
+- Function names should reflect biological interpretation
+- Error messages should use proper scientific terminology
+- Comments should explain the experimental context
+
+## MCP Tool Design Patterns
+
+### Tool Function Structure
+Follow this pattern for all MCP tools:
+
+```python
+def tool_name(
+    required_param: str,
+    optional_param: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Brief description of what the tool does.
+
+    Args:
+        required_param: Description with example (e.g., 'Atu0001')
+        optional_param: Description with examples (e.g., 'glucose', 'pH')
+
+    Returns:
+        Dict with structured results. Explain the data structure and biological meaning.
+    """
+    return fitness_loader.method_name(required_param, optional_param)
+```
+
+### Error Handling
+```python
+# ✅ Good: Informative error responses
+if gene_id not in self.genes:
+    return {'error': f'Gene {gene_id} not found in dataset'}
+
+# ✅ Good: Graceful degradation
+if not os.path.exists(self.exp_desc_file):
+    return  # Skip loading condition details if file missing
+
+# ❌ Bad: Generic errors
+raise Exception("Something went wrong")  # Not helpful for users
+```
+
+### Data Return Formats
+```python
+# ✅ Good: Structured, consistent returns
+return {
+    'gene': {
+        'locusId': gene_info['locusId'],
+        'sysName': gene_info['sysName'],
+        'description': gene_info['description']
+    },
+    'fitness_data': fitness_data,
+    'total_conditions': len(fitness_data)
+}
+
+# ❌ Bad: Inconsistent structure
+return gene_info  # Raw internal data structure
+```
+
+## File Organization
+
+### Directory Structure
+```
+fitness-mcp/
+├── src/fitness_mcp/
+│   └── main.py              # All MCP logic (currently monolithic)
+├── data/
+│   ├── fit_t.tab            # Main fitness data (90MB TSV)
+│   └── exp_organism_Agro.txt # Experimental condition descriptions  
+├── tests/
+│   └── test_main.py         # Unit tests
+├── pyproject.toml           # Project configuration
+├── README.md                # User documentation
+└── CLAUDE.md                # Development guide (this file)
+```
+
+### Code Organization Within main.py
+The current monolithic structure is organized in logical sections:
+
+1. **Imports and Setup** (lines 1-20)
+2. **Data Loading Class** (lines 21-340) 
+3. **MCP Tool Functions** (lines 341-580)
+4. **FastMCP Registration** (lines 581-600)
+
+Future refactoring should maintain this logical separation.
+
+## Testing Standards
+
+### Test Categories
+Use pytest markers for different test types:
+
+```python
+@pytest.mark.unit
+def test_fitness_score_interpretation():
+    """Fast, isolated tests of core logic."""
+    
+@pytest.mark.integration  
+def test_full_gene_analysis():
+    """Tests involving multiple components."""
+    
+@pytest.mark.slow
+def test_large_dataset_performance():
+    """Performance tests with full 90MB dataset."""
+```
+
+### Test Data
+```python
+# ✅ Good: Small, focused test data
+TEST_GENE_DATA = {
+    'Atu0001': {
+        'locusId': 'Atu0001',
+        'sysName': 'test_gene',
+        'description': 'test gene description',
+        'fitness_values': [-0.5, 0.8, 0.1]
+    }
+}
+
+# ❌ Bad: Using full production dataset in unit tests
+def test_search():
+    loader = FitnessDataLoader("data/fit_t.tab")  # 90MB file in tests
+```
+
+## Performance Guidelines
+
+### Memory Efficiency
+- Load data once, share across all tools
+- Use generators for large result sets
+- Cache expensive computations with LRU
+- Monitor memory usage with large datasets
+
+### Response Time Targets
+- Gene lookups: < 10ms
+- Simple searches: < 100ms  
+- Complex analyses: < 1s
+- Data loading: < 5s (one-time cost)
+
+## Security Considerations
+
+### Input Validation
+```python
+# ✅ Good: Validate all user inputs
+if not isinstance(gene_id, str) or not gene_id.strip():
+    return {'error': 'Gene ID must be a non-empty string'}
+
+# ✅ Good: Sanitize filter inputs
+condition_filter = condition_filter.lower().strip() if condition_filter else None
+
+# ❌ Bad: Direct use of user input in file operations
+with open(f"data/{user_input}.tab", 'r'):  # Path injection risk
+```
+
+### Data Privacy
+- No logging of sensitive biological data
+- Error messages should not expose internal data structures
+- Rate limiting considerations for MCP deployment
+
+## Dependencies Management
+
+### Core Dependencies
+- `fastmcp`: MCP server framework
+- `csv`: Built-in TSV parsing (sufficient for current needs)
+- `threading`: Thread safety for concurrent access
+- `functools.lru_cache`: Performance optimization
+
+### Dependency Principles
+- Prefer standard library when possible
+- Avoid heavy dependencies (pandas, numpy) unless necessary
+- Keep startup time fast
+- Consider memory footprint of dependencies
+
+## Documentation Standards
+
+### Docstring Requirements
+All public functions must have docstrings following this pattern:
+
+```python
+def function_name(param1: str, param2: Optional[float] = None) -> Dict[str, Any]:
+    """
+    Brief one-line description.
+
+    Longer description explaining biological context and use cases.
+
+    Args:
+        param1: Description with biological meaning and examples
+        param2: Description with default behavior explanation
+
+    Returns:
+        Description of return structure and biological interpretation
+        
+    Raises:
+        SpecificError: When this specific condition occurs
+    """
+```
+
+### Code Comments
+```python
+# ✅ Good: Explain biological reasoning
+if fitness_val < -0.5:  # Gene knockout improves fitness significantly
+    gene_inhibits_growth.append(item)
+
+# ✅ Good: Explain technical decisions  
+self._mtime = os.path.getmtime(self.data_file)  # Track file changes for cache invalidation
+
+# ❌ Bad: Obvious comments
+gene_id = row[0]  # Get gene ID from first column
+```
+
+## Deployment Considerations
+
+### MCP Server Configuration
+- Server should start quickly (< 5s including data loading)
+- Handle concurrent requests safely
+- Graceful error responses for client consumption
+- Memory usage should be predictable and bounded
+
+### Production Readiness
+- Monitor file system access for data file changes
+- Log meaningful events for debugging
+- Handle edge cases in biological data gracefully
+- Provide clear error messages for common user mistakes
+
+---
+
+## Future Development Guidelines
+
+### Extensibility Patterns
+When adding new features:
+1. Follow the existing data loader pattern
+2. Add appropriate caching for expensive operations
+3. Maintain biological accuracy in all interpretations
+4. Add comprehensive docstrings with examples
+5. Consider thread safety for concurrent access
+
+### Breaking Changes
+Any changes to the biological interpretation of fitness scores constitute breaking changes and must be carefully reviewed.
+
+### Code Review Checklist
+- [ ] Correct biological interpretation maintained
+- [ ] Thread safety considered
+- [ ] Appropriate caching implemented
+- [ ] Comprehensive docstrings with examples
+- [ ] Error handling for edge cases
+- [ ] Performance impact assessed
+- [ ] Tests added for new functionality
