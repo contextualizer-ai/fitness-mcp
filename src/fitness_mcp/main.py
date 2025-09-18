@@ -12,9 +12,15 @@
 import csv
 import os
 import random
+from collections import Counter, defaultdict
 from typing import Any, Dict, List, Optional, Set, Tuple
 from dataclasses import dataclass
 from fastmcp import FastMCP
+try:
+    import numpy as np
+    HAS_NUMPY = True
+except ImportError:
+    HAS_NUMPY = False
 from fitness_mcp.data_processing import generate_significant_fitness_pairs
 
 
@@ -1336,6 +1342,9 @@ class PairsDataLoader:
         # Calculate module density (how tight the relationships are)
         density = len(module_genes) * len(module_conditions) / (len(module_genes) + len(module_conditions))
         
+        # Add module categorization
+        categorization = self.categorize_module(sorted(module_genes), sorted(module_conditions))
+        
         return {
             "start_gene": start_gene,
             "start_condition": start_condition,
@@ -1347,13 +1356,14 @@ class PairsDataLoader:
                 "total_possible_pairs": len(module_genes) * len(module_conditions),
                 "density": round(density, 2)
             },
+            "categorization": categorization,
             "build_info": {
                 "iterations": iteration,
                 "max_size_limit": max_size,
                 "stopped_naturally": True,
                 "history": history
             },
-            "interpretation": f"Tight functional module with {len(module_genes)} genes and {len(module_conditions)} conditions (density: {density:.2f})"
+            "interpretation": f"Tight functional module with {len(module_genes)} genes and {len(module_conditions)} conditions (density: {density:.2f}). {categorization.get('summary_description', '')}"
         }
     
     def build_multiple_modules(self, num_modules: int = 5, max_size: int = 10, seed: Optional[int] = None) -> List[Dict[str, Any]]:
@@ -1395,6 +1405,170 @@ class PairsDataLoader:
             modules.append(module)
         
         return modules
+    
+    def categorize_module(self, module_genes: List[str], module_conditions: List[str]) -> Dict[str, Any]:
+        """
+        Categorize a module based on its fitness characteristics.
+        
+        Args:
+            module_genes: List of genes in the module
+            module_conditions: List of conditions in the module
+            
+        Returns:
+            Dict containing module categorization details
+        """
+        self.load_data()
+        
+        # Collect all fitness values for genes in the module
+        fitness_values = []
+        condition_fitness_map = defaultdict(list)
+        gene_fitness_map = defaultdict(list)
+        
+        for gene in module_genes:
+            gene_data = self.get_conditions_for_gene(gene)
+            for condition_data in gene_data:
+                if condition_data["condition"] in module_conditions:
+                    value = condition_data["value"]
+                    fitness_values.append(value)
+                    condition_fitness_map[condition_data["condition"]].append(value)
+                    gene_fitness_map[gene].append(value)
+        
+        if not fitness_values:
+            return {
+                "primary_category": "Unknown",
+                "variability": "Unknown",
+                "condition_diversity": "No Data",
+                "mean_fitness": 0.0,
+                "std_fitness": 0.0,
+                "significant_conditions": 0,
+                "top_conditions": [],
+                "error": "No fitness data found for module"
+            }
+        
+        # Calculate statistics
+        if HAS_NUMPY:
+            fitness_array = np.array(fitness_values)
+            mean_fitness = float(np.mean(fitness_array))
+            std_fitness = float(np.std(fitness_array))
+        else:
+            # Fallback calculations without numpy
+            mean_fitness = sum(fitness_values) / len(fitness_values)
+            std_fitness = (sum((x - mean_fitness) ** 2 for x in fitness_values) / len(fitness_values)) ** 0.5
+        
+        # Count conditions with significant fitness (|value| > 2.0)
+        significant_conditions = len([c for c, values in condition_fitness_map.items() 
+                                    if any(abs(v) > 2.0 for v in values)])
+        
+        # Determine primary category based on average fitness
+        if mean_fitness > 2.0:
+            primary_category = "Growth Enhancing"
+        elif mean_fitness < -2.0:
+            primary_category = "Growth Inhibiting"
+        else:
+            primary_category = "Neutral/Adaptive"
+        
+        # Subcategories based on variability
+        if std_fitness > 3.0:
+            variability = "High Variability"
+        elif std_fitness > 1.5:
+            variability = "Moderate Variability"
+        else:
+            variability = "Low Variability"
+        
+        # Condition diversity assessment
+        if significant_conditions > 50:
+            condition_diversity = "Broad Condition Response"
+        elif significant_conditions > 20:
+            condition_diversity = "Moderate Condition Response"
+        else:
+            condition_diversity = "Narrow Condition Response"
+        
+        # Top conditions by average absolute fitness
+        condition_avg_fitness = {}
+        for condition, values in condition_fitness_map.items():
+            if values:
+                condition_avg_fitness[condition] = sum(abs(v) for v in values) / len(values)
+        
+        top_conditions = sorted(condition_avg_fitness.items(), 
+                              key=lambda x: x[1], reverse=True)[:5]
+        top_conditions = [cond for cond, _ in top_conditions]
+        
+        # Generate summary description
+        summary = f"{primary_category} module with {variability.lower()} and {condition_diversity.lower()}"
+        
+        return {
+            "primary_category": primary_category,
+            "variability": variability,
+            "condition_diversity": condition_diversity,
+            "mean_fitness": round(mean_fitness, 3),
+            "std_fitness": round(std_fitness, 3),
+            "significant_conditions": significant_conditions,
+            "top_conditions": top_conditions,
+            "summary_description": summary,
+            "module_size": {
+                "num_genes": len(module_genes),
+                "num_conditions": len(module_conditions),
+                "total_pairs": len(fitness_values)
+            }
+        }
+    
+    def generate_module_summary(self, modules: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Generate a summary of categorized modules.
+        
+        Args:
+            modules: List of modules with categorization data
+            
+        Returns:
+            Dict containing summary statistics across all modules
+        """
+        if not modules:
+            return {"error": "No modules provided for summary"}
+        
+        successful_modules = [m for m in modules if "error" not in m and "module" in m]
+        
+        if not successful_modules:
+            return {"error": "No successful modules found for summary"}
+        
+        # Categorize modules by primary category
+        category_counts: Counter[str] = Counter()
+        variability_counts: Counter[str] = Counter()
+        diversity_counts: Counter[str] = Counter()
+        
+        total_genes = set()
+        total_conditions = set()
+        avg_densities = []
+        
+        for module in successful_modules:
+            if "categorization" in module:
+                cat = module["categorization"]
+                category_counts[cat["primary_category"]] += 1
+                variability_counts[cat["variability"]] += 1
+                diversity_counts[cat["condition_diversity"]] += 1
+            
+            if "module" in module:
+                mod = module["module"]
+                total_genes.update(mod["genes"])
+                total_conditions.update(mod["conditions"])
+                avg_densities.append(mod["density"])
+        
+        avg_density = sum(avg_densities) / len(avg_densities) if avg_densities else 0
+        
+        return {
+            "summary": {
+                "total_modules": len(successful_modules),
+                "unique_genes": len(total_genes),
+                "unique_conditions": len(total_conditions),
+                "average_module_density": round(avg_density, 3)
+            },
+            "categorization_summary": {
+                "primary_categories": dict(category_counts),
+                "variability_patterns": dict(variability_counts),
+                "condition_diversity": dict(diversity_counts)
+            },
+            "interpretation": f"Analyzed {len(successful_modules)} modules covering {len(total_genes)} genes and {len(total_conditions)} conditions. "
+                           f"Most common category: {category_counts.most_common(1)[0][0] if category_counts else 'None'}"
+        }
 
 
 # Global data loader instances
@@ -2100,6 +2274,9 @@ def discover_functional_modules(num_modules: int = 10, max_size: int = 10, seed:
     else:
         avg_genes = avg_conditions = avg_density = avg_iterations = 0
     
+    # Generate categorization summary
+    categorization_summary = pairs_loader.generate_module_summary(successful_modules)
+    
     return {
         "summary": {
             "total_attempts": num_modules,
@@ -2118,13 +2295,15 @@ def discover_functional_modules(num_modules: int = 10, max_size: int = 10, seed:
             "average_density": round(avg_density, 2),
             "average_iterations": round(avg_iterations, 1)
         },
+        "categorization_analysis": categorization_summary,
         "successful_modules": successful_modules,
         "parameters": {
             "max_size_limit": max_size,
             "random_seed": seed
         },
         "interpretation": f"Found {len(successful_modules)} tight functional modules out of {num_modules} attempts. "
-                         f"Modules represent coherent gene-condition relationships with average density {avg_density:.2f}."
+                         f"Modules represent coherent gene-condition relationships with average density {avg_density:.2f}. "
+                         f"{categorization_summary.get('interpretation', '')}"
     }
 
 
