@@ -286,15 +286,15 @@ class TestFitnessDataLoader:
         result = loader.interpret_fitness_score(None)
         assert result["effect"] == "unknown"
 
-        # Test negative score (gene inhibits growth)
+        # Test negative score (gene benefits growth - knockout reduces fitness)
         result = loader.interpret_fitness_score(-0.8)
-        assert result["effect"] == "gene_inhibits_growth"
-        assert "improves fitness" in result["interpretation"]
-
-        # Test positive score (gene benefits growth)
-        result = loader.interpret_fitness_score(0.8)
         assert result["effect"] == "gene_benefits_growth"
         assert "reduces fitness" in result["interpretation"]
+
+        # Test positive score (gene inhibits growth - knockout improves fitness)
+        result = loader.interpret_fitness_score(0.8)
+        assert result["effect"] == "gene_inhibits_growth"
+        assert "improves fitness" in result["interpretation"]
 
         # Test neutral score
         result = loader.interpret_fitness_score(0.05)

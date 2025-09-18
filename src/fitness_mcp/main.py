@@ -5,20 +5,506 @@
 # This MCP analyzes fitness data from barcoded Agrobacterium mutants grown in
 # mixed cultures across different conditions. Each row represents a gene knockout
 # mutant, and fitness scores indicate:
-# - NEGATIVE values: Gene knockout IMPROVES fitness (gene normally inhibits growth)
-# - POSITIVE values: Gene knockout REDUCES fitness (gene is beneficial/essential)
+# - NEGATIVE values: Gene knockout REDUCES fitness (gene is beneficial/essential for growth)
+# - POSITIVE values: Gene knockout IMPROVES fitness (gene normally inhibits growth)
 # - Values near 0: Gene knockout has minimal effect on fitness
 ################################################################################
 import csv
 import os
 from typing import Any, Dict, List, Optional
+from dataclasses import dataclass
 from fastmcp import FastMCP
 from fitness_mcp.data_processing import generate_significant_fitness_pairs
 
 
-# DATA LOADING SECTION
+# METADATA REGISTRY SECTION
 import threading
 from functools import lru_cache
+
+
+@dataclass
+class GeneMetadata:
+    """Metadata for a gene/locus (no fitness data)."""
+
+    locus_id: str
+    sys_name: str
+    description: str
+
+
+@dataclass
+class ConditionMetadata:
+    """Metadata for an experimental condition."""
+
+    condition_id: str
+    short_desc: str
+    long_desc: str
+    media: str
+    temperature: str
+    pH: str
+    aerobic: str
+    condition_1: str
+    concentration_1: str
+    units_1: str
+    exp_group: str
+
+
+@dataclass
+class ModuleMetadata:
+    """Metadata for a functional module."""
+
+    module_id: int
+    name: str
+    category: str
+    gene_count: int
+    gene_list: List[str]
+
+
+@dataclass
+class FitnessEffect:
+    """A pre-filtered significant fitness effect."""
+
+    gene_id: str
+    condition_id: str
+    fitness_value: float
+
+
+class MetadataRegistry:
+    """Centralized registry for all gene, condition, and module metadata.
+
+    Provides efficient, unified access to metadata while keeping fitness data separate.
+    Eliminates redundancy between the old FitnessDataLoader, ModuleDataLoader, and PairsDataLoader.
+    """
+
+    def __init__(
+        self,
+        fitness_file: str = "data/fit_t.tab",
+        exp_desc_file: str = "data/exp_organism_Agro.txt",
+        modules_file: str = "data/RbTnSeq_modules_t1e-7.csv",
+        module_meta_file: str = "data/module_meta.tsv",
+        pairs_file: str = "data/fit_t_pairs_threshold_2_long.tab",
+    ):
+        """Initialize the metadata registry.
+
+        Args:
+            fitness_file: Path to fitness data file (for gene/condition extraction)
+            exp_desc_file: Path to experimental conditions description file
+            modules_file: Path to gene-module assignments file
+            module_meta_file: Path to module metadata file
+            pairs_file: Path to significant fitness pairs file
+        """
+        self.fitness_file = fitness_file
+        self.exp_desc_file = exp_desc_file
+        self.modules_file = modules_file
+        self.module_meta_file = module_meta_file
+        self.pairs_file = pairs_file
+
+        # Core data structures
+        self.genes: Dict[str, GeneMetadata] = {}
+        self.conditions: Dict[str, ConditionMetadata] = {}
+        self.modules: Dict[int, ModuleMetadata] = {}
+        self.fitness_effects: List[FitnessEffect] = []
+
+        # Index structures for efficient lookup
+        self.gene_to_modules: Dict[str, List[int]] = {}
+        self.module_to_genes: Dict[int, List[str]] = {}
+        self.gene_to_conditions: Dict[str, List[str]] = {}
+        self.condition_to_genes: Dict[str, List[str]] = {}
+
+        # File tracking and thread safety
+        self.loaded = False
+        self._file_mtimes: Dict[str, float] = {}
+        self._lock = threading.RLock()
+
+    def _needs_reload(self) -> bool:
+        """Check if any data file has been modified since last load."""
+        try:
+            files_to_check = [
+                self.fitness_file,
+                self.exp_desc_file,
+                self.modules_file,
+                self.module_meta_file,
+                self.pairs_file,
+            ]
+
+            for filepath in files_to_check:
+                if os.path.exists(filepath):
+                    current_mtime = os.path.getmtime(filepath)
+                    if (
+                        filepath not in self._file_mtimes
+                        or self._file_mtimes[filepath] != current_mtime
+                    ):
+                        return True
+
+            return not self.loaded
+
+        except OSError:
+            return False
+
+    def load_data(self) -> None:
+        """Load all metadata from files with thread safety."""
+        with self._lock:
+            if not self._needs_reload():
+                return
+
+            # Clear existing data
+            self._clear_data()
+
+            # Load in dependency order
+            self._load_gene_metadata()
+            self._load_condition_metadata()
+            self._load_module_metadata()
+            self._load_fitness_effects()
+
+            # Build index structures
+            self._build_indexes()
+
+            # Update file timestamps
+            self._update_file_mtimes()
+
+            self.loaded = True
+
+    def _clear_data(self) -> None:
+        """Clear all data structures."""
+        self.genes.clear()
+        self.conditions.clear()
+        self.modules.clear()
+        self.fitness_effects.clear()
+        self.gene_to_modules.clear()
+        self.module_to_genes.clear()
+        self.gene_to_conditions.clear()
+        self.condition_to_genes.clear()
+
+    def _load_gene_metadata(self) -> None:
+        """Load gene metadata from fitness file (first 3 columns only)."""
+        if not os.path.exists(self.fitness_file):
+            return
+
+        with open(self.fitness_file, "r") as f:
+            reader = csv.reader(f, delimiter="\t")
+
+            # Skip header
+            next(reader)
+
+            # Read gene metadata (first 3 columns: locusId, sysName, desc)
+            for row in reader:
+                if len(row) < 3:
+                    continue
+
+                locus_id = row[0]
+                sys_name = row[1]
+                description = row[2]
+
+                gene_meta = GeneMetadata(
+                    locus_id=locus_id, sys_name=sys_name, description=description
+                )
+
+                # Index by both locus_id and sys_name
+                self.genes[locus_id] = gene_meta
+                if sys_name and sys_name != locus_id:
+                    self.genes[sys_name] = gene_meta
+
+    def _load_condition_metadata(self) -> None:
+        """Load condition metadata from experimental description file."""
+        if not os.path.exists(self.exp_desc_file):
+            return
+
+        with open(self.exp_desc_file, "r") as f:
+            reader = csv.reader(f, delimiter="\t")
+            header = next(reader)
+
+            for row in reader:
+                if len(row) < len(header):
+                    continue
+
+                exp_data = dict(zip(header, row))
+                exp_name = exp_data.get("expName", "")
+
+                if exp_name:
+                    condition_meta = ConditionMetadata(
+                        condition_id=exp_name,
+                        short_desc=exp_data.get("expDesc", ""),
+                        long_desc=exp_data.get("expDescLong", ""),
+                        media=exp_data.get("media", ""),
+                        temperature=exp_data.get("temperature", ""),
+                        pH=exp_data.get("pH", ""),
+                        aerobic=exp_data.get("aerobic", ""),
+                        condition_1=exp_data.get("condition_1", ""),
+                        concentration_1=exp_data.get("concentration_1", ""),
+                        units_1=exp_data.get("units_1", ""),
+                        exp_group=exp_data.get("expGroup", ""),
+                    )
+                    self.conditions[exp_name] = condition_meta
+
+    def _load_module_metadata(self) -> None:
+        """Load module metadata and gene-module assignments."""
+        # Load module metadata first
+        if os.path.exists(self.module_meta_file):
+            with open(self.module_meta_file, "r") as f:
+                reader = csv.DictReader(f, delimiter="\t")
+                for row in reader:
+                    module_id = int(row["module"])
+                    self.modules[module_id] = ModuleMetadata(
+                        module_id=module_id,
+                        name=row["name"],
+                        category=row["category"],
+                        gene_count=int(row["count"]),
+                        gene_list=[],  # Will be populated from assignments file
+                    )
+
+        # Load gene-module assignments
+        if os.path.exists(self.modules_file):
+            with open(self.modules_file, "r") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    module_id = int(row["module"])
+                    locus_tag = row["locus_tag"]
+
+                    # Add to module's gene list
+                    if module_id in self.modules:
+                        self.modules[module_id].gene_list.append(locus_tag)
+
+    def _load_fitness_effects(self) -> None:
+        """Load significant fitness effects from pairs file."""
+        if not os.path.exists(self.pairs_file):
+            # Generate if it doesn't exist
+            self._generate_pairs_file()
+
+        if not os.path.exists(self.pairs_file):
+            return
+
+        with open(self.pairs_file, "r") as f:
+            reader = csv.DictReader(f, delimiter="\t")
+
+            for row in reader:
+                effect = FitnessEffect(
+                    gene_id=row["gene_id"],
+                    condition_id=row["condition_id"],
+                    fitness_value=float(row["value"]),
+                )
+                self.fitness_effects.append(effect)
+
+    def _generate_pairs_file(self) -> None:
+        """Generate pairs file if it doesn't exist."""
+        # Extract threshold from filename
+        filename = os.path.basename(self.pairs_file)
+        if "threshold_" in filename:
+            threshold_str = filename.split("threshold_")[1].split("_")[0]
+            try:
+                threshold = float(threshold_str)
+            except ValueError:
+                threshold = 2.0
+        else:
+            threshold = 2.0
+
+        if os.path.exists(self.fitness_file):
+            print(f"Generating pairs file with threshold {threshold}...")
+            generate_significant_fitness_pairs(
+                self.fitness_file, self.pairs_file, threshold
+            )
+
+    def _build_indexes(self) -> None:
+        """Build efficient lookup indexes."""
+        # Build gene-module indexes
+        for module_id, module_meta in self.modules.items():
+            for gene_id in module_meta.gene_list:
+                if gene_id not in self.gene_to_modules:
+                    self.gene_to_modules[gene_id] = []
+                self.gene_to_modules[gene_id].append(module_id)
+
+                if module_id not in self.module_to_genes:
+                    self.module_to_genes[module_id] = []
+                self.module_to_genes[module_id].append(gene_id)
+
+        # Build gene-condition indexes from fitness effects
+        for effect in self.fitness_effects:
+            gene_id = effect.gene_id
+            condition_id = effect.condition_id
+
+            if gene_id not in self.gene_to_conditions:
+                self.gene_to_conditions[gene_id] = []
+            self.gene_to_conditions[gene_id].append(condition_id)
+
+            if condition_id not in self.condition_to_genes:
+                self.condition_to_genes[condition_id] = []
+            self.condition_to_genes[condition_id].append(gene_id)
+
+    def _update_file_mtimes(self) -> None:
+        """Update file modification times."""
+        files_to_check = [
+            self.fitness_file,
+            self.exp_desc_file,
+            self.modules_file,
+            self.module_meta_file,
+            self.pairs_file,
+        ]
+
+        for filepath in files_to_check:
+            if os.path.exists(filepath):
+                self._file_mtimes[filepath] = os.path.getmtime(filepath)
+
+    # Convenience methods for common access patterns
+
+    def get_gene(self, gene_id: str) -> Optional[GeneMetadata]:
+        """Get gene metadata by locus_id or sys_name."""
+        self.load_data()
+        return self.genes.get(gene_id)
+
+    def get_condition(self, condition_id: str) -> Optional[ConditionMetadata]:
+        """Get condition metadata by condition_id."""
+        self.load_data()
+        return self.conditions.get(condition_id)
+
+    def get_module(self, module_id: int) -> Optional[ModuleMetadata]:
+        """Get module metadata by module_id."""
+        self.load_data()
+        return self.modules.get(module_id)
+
+    def search_genes(self, query: str, limit: int = 10) -> List[GeneMetadata]:
+        """Search genes by name or description."""
+        self.load_data()
+        query = query.lower()
+        matches = []
+        seen_locus_ids = set()
+
+        for gene_meta in self.genes.values():
+            # Skip duplicates (since we index by both locus_id and sys_name)
+            if gene_meta.locus_id in seen_locus_ids:
+                continue
+
+            if (
+                query in gene_meta.locus_id.lower()
+                or query in gene_meta.sys_name.lower()
+                or query in gene_meta.description.lower()
+            ):
+                matches.append(gene_meta)
+                seen_locus_ids.add(gene_meta.locus_id)
+
+                if len(matches) >= limit:
+                    break
+
+        return matches
+
+    def get_gene_modules(self, gene_id: str) -> List[ModuleMetadata]:
+        """Get all modules containing a gene."""
+        self.load_data()
+        module_ids = self.gene_to_modules.get(gene_id, [])
+        return [self.modules[mid] for mid in module_ids if mid in self.modules]
+
+    def get_module_genes(self, module_id: int) -> List[GeneMetadata]:
+        """Get all genes in a module."""
+        self.load_data()
+        gene_ids = self.module_to_genes.get(module_id, [])
+        genes = []
+        for gid in gene_ids:
+            gene_meta = self.genes.get(gid)
+            if gene_meta:
+                genes.append(gene_meta)
+        return genes
+
+    def get_gene_fitness_effects(self, gene_id: str) -> List[FitnessEffect]:
+        """Get all significant fitness effects for a gene."""
+        self.load_data()
+        return [effect for effect in self.fitness_effects if effect.gene_id == gene_id]
+
+    def get_condition_fitness_effects(self, condition_id: str) -> List[FitnessEffect]:
+        """Get all significant fitness effects for a condition."""
+        self.load_data()
+        return [
+            effect
+            for effect in self.fitness_effects
+            if effect.condition_id == condition_id
+        ]
+
+    def search_modules(self, query: str, limit: int = 10) -> List[ModuleMetadata]:
+        """Search modules by name or category."""
+        self.load_data()
+        query = query.lower()
+        matches = []
+
+        for module_meta in self.modules.values():
+            if (
+                query in module_meta.name.lower()
+                or query in module_meta.category.lower()
+            ):
+                matches.append(module_meta)
+
+                if len(matches) >= limit:
+                    break
+
+        return matches
+
+    def get_all_conditions(self, condition_filter: Optional[str] = None) -> List[str]:
+        """Get list of all condition IDs, optionally filtered."""
+        self.load_data()
+        condition_ids = list(self.conditions.keys())
+
+        if condition_filter:
+            filter_lower = condition_filter.lower()
+            condition_ids = [
+                cid for cid in condition_ids if filter_lower in cid.lower()
+            ]
+
+        return condition_ids
+
+    def get_all_modules_list(self) -> List[Dict[str, Any]]:
+        """Get list of all modules with basic info."""
+        self.load_data()
+        return [
+            {
+                "module_id": module_meta.module_id,
+                "name": module_meta.name,
+                "category": module_meta.category,
+                "count": module_meta.gene_count,
+            }
+            for module_meta in self.modules.values()
+        ]
+
+    def interpret_fitness_score(self, fitness_score: float) -> Dict[str, Any]:
+        """Interpret a fitness score in biological terms."""
+        if fitness_score is None:
+            return {
+                "interpretation": "No data available",
+                "effect": "unknown",
+                "magnitude": "unknown",
+            }
+
+        abs_score = abs(fitness_score)
+
+        if abs_score < 0.2:
+            magnitude = "minimal"
+        elif abs_score < 0.5:
+            magnitude = "moderate"
+        elif abs_score < 1.0:
+            magnitude = "strong"
+        else:
+            magnitude = "very strong"
+
+        if fitness_score < -0.1:
+            effect = "gene_benefits_growth"
+            interpretation = f"Gene knockout reduces fitness ({magnitude} effect). This gene is beneficial/essential for growth in this condition."
+        elif fitness_score > 0.1:
+            effect = "gene_inhibits_growth"
+            interpretation = f"Gene knockout improves fitness ({magnitude} effect). This gene normally inhibits growth in this condition."
+        else:
+            effect = "neutral"
+            interpretation = (
+                "Gene knockout has minimal effect on fitness in this condition."
+            )
+
+        return {
+            "interpretation": interpretation,
+            "effect": effect,
+            "magnitude": magnitude,
+            "score": fitness_score,
+        }
+
+
+# Global metadata registry instance
+metadata_registry = MetadataRegistry()
+
+
+# Legacy data loaders (to be deprecated after migration)
+# DATA LOADING SECTION
 
 
 class ModuleDataLoader:
@@ -355,8 +841,8 @@ class FitnessDataLoader:
 
         Returns:
             Dictionary with gene info and fitness scores. Fitness scores represent:
-            - Negative values: Gene knockout improves fitness (gene normally inhibits growth)
-            - Positive values: Gene knockout reduces fitness (gene is beneficial/essential)
+            - Negative values: Gene knockout reduces fitness (gene is beneficial/essential for growth)
+            - Positive values: Gene knockout improves fitness (gene normally inhibits growth)
             - Values near 0: Gene knockout has minimal effect on fitness
         """
         self.load_data()
@@ -505,11 +991,11 @@ class FitnessDataLoader:
             magnitude = "very strong"
 
         if fitness_score < -0.1:
-            effect = "gene_inhibits_growth"
-            interpretation = f"Gene knockout improves fitness ({magnitude} effect). This gene normally inhibits growth in this condition."
-        elif fitness_score > 0.1:
             effect = "gene_benefits_growth"
             interpretation = f"Gene knockout reduces fitness ({magnitude} effect). This gene is beneficial/essential for growth in this condition."
+        elif fitness_score > 0.1:
+            effect = "gene_inhibits_growth"
+            interpretation = f"Gene knockout improves fitness ({magnitude} effect). This gene normally inhibits growth in this condition."
         else:
             effect = "neutral"
             interpretation = (
@@ -708,12 +1194,12 @@ def get_gene_info(gene_id: str) -> Dict[str, Any]:
     Returns:
         Dict containing gene information including locusId, sysName, and description
     """
-    gene_info = fitness_loader.get_gene_info(gene_id)
-    if gene_info:
+    gene_meta = metadata_registry.get_gene(gene_id)
+    if gene_meta:
         return {
-            "locusId": gene_info["locusId"],
-            "sysName": gene_info["sysName"],
-            "description": gene_info["description"],
+            "locusId": gene_meta.locus_id,
+            "sysName": gene_meta.sys_name,
+            "description": gene_meta.description,
         }
     else:
         return {"error": f"Gene {gene_id} not found"}
@@ -732,6 +1218,8 @@ def get_gene_fitness(
     Returns:
         Dict containing gene info and fitness data for matching conditions
     """
+    # Note: Still using legacy loader for now as it contains fitness values
+    # This will be refactored once fitness data is properly separated
     return fitness_loader.get_gene_fitness(gene_id, condition_filter)
 
 
@@ -746,7 +1234,15 @@ def search_genes(query: str, limit: int = 3) -> List[Dict[str, Any]]:
     Returns:
         List of dictionaries containing matching gene information
     """
-    return fitness_loader.search_genes(query, limit)
+    gene_metas = metadata_registry.search_genes(query, limit)
+    return [
+        {
+            "locusId": gene_meta.locus_id,
+            "sysName": gene_meta.sys_name,
+            "description": gene_meta.description,
+        }
+        for gene_meta in gene_metas
+    ]
 
 
 def get_growth_conditions(condition_filter: Optional[str] = None) -> List[str]:
@@ -759,7 +1255,7 @@ def get_growth_conditions(condition_filter: Optional[str] = None) -> List[str]:
     Returns:
         List of condition names
     """
-    return fitness_loader.get_conditions(condition_filter)
+    return metadata_registry.get_all_conditions(condition_filter)
 
 
 def get_condition_details(condition_name: str) -> Dict[str, Any]:
@@ -772,7 +1268,31 @@ def get_condition_details(condition_name: str) -> Dict[str, Any]:
     Returns:
         Dict with detailed condition information including description, media, temperature, pH, and treatment details
     """
-    return fitness_loader.get_condition_details(condition_name)
+    condition_meta = metadata_registry.get_condition(condition_name)
+    if not condition_meta:
+        return {"error": f"Condition {condition_name} not found"}
+
+    return {
+        "condition_name": condition_meta.condition_id,
+        "short_description": condition_meta.short_desc,
+        "long_description": condition_meta.long_desc,
+        "experimental_group": condition_meta.exp_group,
+        "growth_conditions": {
+            "media": condition_meta.media,
+            "temperature": str(condition_meta.temperature) + "°C"
+            if condition_meta.temperature
+            else "",
+            "pH": condition_meta.pH,
+            "aerobic": condition_meta.aerobic,
+        },
+        "treatment": {
+            "compound": condition_meta.condition_1,
+            "concentration": condition_meta.concentration_1,
+            "units": condition_meta.units_1,
+        }
+        if condition_meta.condition_1
+        else None,
+    }
 
 
 def interpret_fitness_score(fitness_score: float) -> Dict[str, Any]:
@@ -784,11 +1304,11 @@ def interpret_fitness_score(fitness_score: float) -> Dict[str, Any]:
 
     Returns:
         Dict with biological interpretation of the fitness effect:
-        - Negative scores: Gene knockout improves fitness (gene normally inhibits growth)
-        - Positive scores: Gene knockout reduces fitness (gene is beneficial/essential)
+        - Negative scores: Gene knockout reduces fitness (gene is beneficial/essential for growth)
+        - Positive scores: Gene knockout improves fitness (gene normally inhibits growth)
         - Near zero: Gene knockout has minimal effect
     """
-    return fitness_loader.interpret_fitness_score(fitness_score)
+    return metadata_registry.interpret_fitness_score(fitness_score)
 
 
 def find_essential_genes(
@@ -807,6 +1327,8 @@ def find_essential_genes(
     Returns:
         List of genes with high positive fitness scores indicating essentiality
     """
+    # Note: Still using legacy fitness loader as it provides access to full fitness data
+    # This function requires complete fitness matrices, not just significant effects
     fitness_loader.load_data()
 
     essential_genes = []
@@ -877,6 +1399,8 @@ def find_growth_inhibitor_genes(
     Returns:
         List of genes with negative fitness scores indicating they normally inhibit growth
     """
+    # Note: Still using legacy fitness loader as it provides access to full fitness data
+    # This function requires complete fitness matrices, not just significant effects
     fitness_loader.load_data()
 
     inhibitor_genes = []
@@ -952,6 +1476,8 @@ def analyze_gene_fitness(
         - conditions_where_gene_inhibits_growth: Positive fitness scores (gene knockout improves fitness, gene INHIBITS growth)
         - neutral_conditions: Fitness scores near zero (gene knockout has minimal effect)
     """
+    # Note: Still using legacy fitness loader as it provides access to full fitness data
+    # This function requires complete fitness matrices, not just significant effects
     fitness_data = fitness_loader.get_gene_fitness(gene_id)
 
     if "error" in fitness_data:
@@ -1033,10 +1559,22 @@ def get_gene_modules(gene_id: str) -> Dict[str, Any]:
     Returns:
         Dict containing modules that include this gene
     """
-    modules = module_loader.get_modules_for_gene(gene_id)
+    module_metas = metadata_registry.get_gene_modules(gene_id)
 
-    if not modules:
+    if not module_metas:
         return {"error": f"No modules found for gene {gene_id}"}
+
+    modules = [
+        {
+            "locus_tag": gene_id,
+            "module_id": module_meta.module_id,
+            "gene_weight": 1.0,  # Default weight - could be enhanced later
+            "product": "",  # Could be populated from gene description
+            "module_name": module_meta.name,
+            "module_category": module_meta.category,
+        }
+        for module_meta in module_metas
+    ]
 
     return {"gene_id": gene_id, "modules": modules, "module_count": len(modules)}
 
@@ -1051,7 +1589,32 @@ def get_module_genes(module_id: int) -> Dict[str, Any]:
     Returns:
         Dict containing module info and all genes in the module
     """
-    return module_loader.get_genes_in_module(module_id)
+    module_meta = metadata_registry.get_module(module_id)
+    if not module_meta:
+        return {"error": f"Module {module_id} not found"}
+
+    gene_metas = metadata_registry.get_module_genes(module_id)
+
+    genes = [
+        {
+            "locus_tag": gene_meta.locus_id,
+            "module_id": module_id,
+            "gene_weight": 1.0,  # Default weight
+            "product": gene_meta.description,
+        }
+        for gene_meta in gene_metas
+    ]
+
+    return {
+        "module": {
+            "module_id": module_meta.module_id,
+            "name": module_meta.name,
+            "category": module_meta.category,
+            "count": module_meta.gene_count,
+        },
+        "genes": genes,
+        "gene_count": len(genes),
+    }
 
 
 def search_modules(query: str, limit: int = 3) -> List[Dict[str, Any]]:
@@ -1065,7 +1628,36 @@ def search_modules(query: str, limit: int = 3) -> List[Dict[str, Any]]:
     Returns:
         List of matching modules with their genes
     """
-    return module_loader.search_modules_by_name(query, limit)
+    module_metas = metadata_registry.search_modules(query, limit)
+
+    results = []
+    for module_meta in module_metas:
+        gene_metas = metadata_registry.get_module_genes(module_meta.module_id)
+
+        genes = [
+            {
+                "locus_tag": gene_meta.locus_id,
+                "module_id": module_meta.module_id,
+                "gene_weight": 1.0,
+                "product": gene_meta.description,
+            }
+            for gene_meta in gene_metas
+        ]
+
+        results.append(
+            {
+                "module": {
+                    "module_id": module_meta.module_id,
+                    "name": module_meta.name,
+                    "category": module_meta.category,
+                    "count": module_meta.gene_count,
+                },
+                "genes": genes,
+                "gene_count": len(genes),
+            }
+        )
+
+    return results
 
 
 def get_all_modules() -> List[Dict[str, Any]]:
@@ -1075,7 +1667,7 @@ def get_all_modules() -> List[Dict[str, Any]]:
     Returns:
         List of all modules with basic information
     """
-    return module_loader.get_all_modules()
+    return metadata_registry.get_all_modules_list()
 
 
 def get_conditions_for_gene(gene_id: str) -> Dict[str, Any]:
@@ -1088,13 +1680,20 @@ def get_conditions_for_gene(gene_id: str) -> Dict[str, Any]:
     Returns:
         Dict containing gene_id and list of conditions with their fitness values
     """
-    conditions = pairs_loader.get_conditions_for_gene(gene_id)
+    fitness_effects = metadata_registry.get_gene_fitness_effects(gene_id)
 
-    if not conditions:
+    if not fitness_effects:
         return {"error": f"No significant conditions found for gene {gene_id}"}
 
-    # Sort by absolute value of fitness score
-    conditions.sort(key=lambda x: abs(x["value"]), reverse=True)
+    # Convert to expected format and sort by absolute value of fitness score
+    conditions = [
+        {"condition": effect.condition_id, "value": effect.fitness_value}
+        for effect in fitness_effects
+    ]
+    conditions.sort(
+        key=lambda x: abs(x["value"]) if isinstance(x["value"], (int, float)) else 0,
+        reverse=True,
+    )
 
     return {
         "gene_id": gene_id,
@@ -1114,15 +1713,22 @@ def get_genes_for_condition(condition_id: str) -> Dict[str, Any]:
     Returns:
         Dict containing condition_id and list of genes with their fitness values
     """
-    genes = pairs_loader.get_genes_for_condition(condition_id)
+    fitness_effects = metadata_registry.get_condition_fitness_effects(condition_id)
 
-    if not genes:
+    if not fitness_effects:
         return {
             "error": f"No genes with significant fitness values found for condition {condition_id}"
         }
 
-    # Sort by absolute value of fitness score
-    genes.sort(key=lambda x: abs(x["value"]), reverse=True)
+    # Convert to expected format and sort by absolute value of fitness score
+    genes = [
+        {"gene": effect.gene_id, "value": effect.fitness_value}
+        for effect in fitness_effects
+    ]
+    genes.sort(
+        key=lambda x: abs(x["value"]) if isinstance(x["value"], (int, float)) else 0,
+        reverse=True,
+    )
 
     return {
         "condition_id": condition_id,
@@ -1148,38 +1754,45 @@ def expand_gene_condition_network(gene_id: str, condition_id: str) -> Dict[str, 
     Returns:
         Dict containing the expanded network of related genes and conditions
     """
-    pairs_loader.load_data()
+    metadata_registry.load_data()
 
-    # Check if the gene-condition pair exists
-    gene_conditions = pairs_loader.get_conditions_for_gene(gene_id)
-    if not any(c["condition"] == condition_id for c in gene_conditions):
+    # Check if the gene-condition pair exists (use index for quick lookup)
+    conditions_for_gene = set(metadata_registry.gene_to_conditions.get(gene_id, []))
+
+    if condition_id not in conditions_for_gene:
         return {
             "error": f"No significant fitness value found for gene {gene_id} in condition {condition_id}"
         }
 
-    # Step 1: Get all conditions for this gene (first hop from gene)
-    conditions_for_gene = {c["condition"] for c in gene_conditions}
+    # Get the specific fitness value for this pair (need to scan once)
+    gene_effects = metadata_registry.get_gene_fitness_effects(gene_id)
+    gene_conditions = {
+        effect.condition_id: effect.fitness_value for effect in gene_effects
+    }
 
-    # Step 2: Get all genes for this condition (first hop from condition)
-    condition_genes = pairs_loader.get_genes_for_condition(condition_id)
-    genes_for_condition = {g["gene"] for g in condition_genes}
+    # Step 1: conditions_for_gene already set above from index
 
-    # Step 3: Expand - get all genes for the condition set
+    # Step 2: Get all genes for this condition (first hop from condition - use index)
+    genes_for_condition = set(
+        metadata_registry.condition_to_genes.get(condition_id, [])
+    )
+
+    # Step 3: Expand - get all genes for the condition set (using index for efficiency)
     all_genes: set[str] = set()
     for cond in conditions_for_gene:
-        cond_genes = pairs_loader.get_genes_for_condition(cond)
-        all_genes.update(g["gene"] for g in cond_genes)
+        # Use index structure instead of linear scan
+        genes_in_cond = metadata_registry.condition_to_genes.get(cond, [])
+        all_genes.update(genes_in_cond)
 
-    # Step 4: Expand - get all conditions for the gene set
+    # Step 4: Expand - get all conditions for the gene set (using index for efficiency)
     all_conditions: set[str] = set()
     for gene in genes_for_condition:
-        gene_conds = pairs_loader.get_conditions_for_gene(gene)
-        all_conditions.update(c["condition"] for c in gene_conds)
+        # Use index structure instead of linear scan
+        conditions_for_gene_item = metadata_registry.gene_to_conditions.get(gene, [])
+        all_conditions.update(conditions_for_gene_item)
 
     # Get the specific fitness value for the query pair
-    query_value = next(
-        (c["value"] for c in gene_conditions if c["condition"] == condition_id), None
-    )
+    query_value = gene_conditions[condition_id]
 
     return {
         "query": {

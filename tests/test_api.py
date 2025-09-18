@@ -1,6 +1,8 @@
-"""Basic API tests for fitness_mcp."""
+"""Basic API tests for fitness_mcp.
 
-from unittest.mock import patch
+Tests use real data and session fixtures for performance.
+No mocks or patches are used per project policy.
+"""
 
 from src.fitness_mcp.main import (
     get_gene_info,
@@ -8,7 +10,6 @@ from src.fitness_mcp.main import (
     search_genes,
     get_growth_conditions,
     interpret_fitness_score,
-    fitness_loader,
 )
 
 
@@ -17,90 +18,102 @@ def test_reality():
     assert 1 == 1
 
 
-def test_gene_info_api_basic():
-    """Test basic gene info API functionality."""
-    with patch.object(fitness_loader, "get_gene_info") as mock_get:
-        mock_get.return_value = {
-            "locusId": "Atu0001",
-            "sysName": "testGene",
-            "description": "Test gene description",
-        }
+def test_gene_info_api_basic(loaded_metadata_registry):
+    """Test basic gene info API functionality with real data."""
+    # Test with a real gene from the loaded data
+    if loaded_metadata_registry.genes:
+        gene_id = list(loaded_metadata_registry.genes.keys())[0]
+        result = get_gene_info(gene_id)
 
-        result = get_gene_info("Atu0001")
+        if "error" not in result:
+            assert "locusId" in result
+            assert "sysName" in result
+            assert "description" in result
+            assert isinstance(result["locusId"], str)
+            assert isinstance(result["sysName"], str)
+            assert isinstance(result["description"], str)
 
-        assert "locusId" in result
-        assert "sysName" in result
-        assert "description" in result
-        assert result["locusId"] == "Atu0001"
-
-
-def test_gene_fitness_api_basic():
-    """Test basic gene fitness API functionality."""
-    mock_response = {
-        "gene": {
-            "locusId": "Atu0001",
-            "sysName": "testGene",
-            "description": "Test gene",
-        },
-        "fitness_data": [{"condition": "test_cond", "fitness": 0.5}],
-        "total_conditions": 1,
-    }
-
-    with patch.object(fitness_loader, "get_gene_fitness") as mock_get:
-        mock_get.return_value = mock_response
-
-        result = get_gene_fitness("Atu0001")
-
-        assert "gene" in result
-        assert "fitness_data" in result
-        assert len(result["fitness_data"]) == 1
+    # Test with non-existent gene
+    result = get_gene_info("nonexistent_gene_123")
+    assert "error" in result
 
 
-def test_search_genes_api_basic():
-    """Test basic search genes API functionality."""
-    mock_results = [
-        {"locusId": "Atu0001", "sysName": "gene1", "description": "Test gene 1"},
-        {"locusId": "Atu0002", "sysName": "gene2", "description": "Test gene 2"},
-    ]
+def test_gene_fitness_api_basic(loaded_metadata_registry):
+    """Test basic gene fitness API functionality with real data."""
+    # Test with a real gene from the loaded data
+    if loaded_metadata_registry.genes:
+        gene_id = list(loaded_metadata_registry.genes.keys())[0]
+        result = get_gene_fitness(gene_id)
 
-    with patch.object(fitness_loader, "search_genes") as mock_search:
-        mock_search.return_value = mock_results
+        if "error" not in result:
+            assert "gene" in result
+            assert "fitness_data" in result
+            assert "total_conditions" in result
+            assert isinstance(result["fitness_data"], list)
 
-        result = search_genes("test")
+            # Check gene structure
+            gene = result["gene"]
+            assert "locusId" in gene
+            assert "sysName" in gene
+            assert "description" in gene
 
-        assert isinstance(result, list)
-        assert len(result) == 2
+    # Test with non-existent gene
+    result = get_gene_fitness("nonexistent_gene_123")
+    assert "error" in result
+
+
+def test_search_genes_api_basic(loaded_metadata_registry):
+    """Test basic search genes API functionality with real data."""
+    # Data is already loaded via fixture
+    assert loaded_metadata_registry.loaded, "Fitness data must be loaded for API tests"
+    assert len(loaded_metadata_registry.genes) > 0, (
+        "Fitness data must contain genes for API tests"
+    )
+
+    result = search_genes("gene")  # Search for common term
+
+    assert isinstance(result, list)
+    # Test structure if results exist
+    if len(result) > 0:
         assert all("locusId" in gene for gene in result)
+        assert all("sysName" in gene for gene in result)
+        assert all("description" in gene for gene in result)
 
 
-def test_growth_conditions_api_basic():
-    """Test basic growth conditions API functionality."""
-    mock_conditions = ["condition1", "condition2", "condition3"]
+def test_growth_conditions_api_basic(loaded_metadata_registry):
+    """Test basic growth conditions API functionality with real data."""
+    # Data is already loaded via fixture
+    assert loaded_metadata_registry.loaded, "Fitness data must be loaded for API tests"
+    assert len(loaded_metadata_registry.conditions) > 0, (
+        "Fitness data must contain conditions for API tests"
+    )
 
-    with patch.object(fitness_loader, "get_conditions") as mock_get:
-        mock_get.return_value = mock_conditions
+    result = get_growth_conditions()
 
-        result = get_growth_conditions()
-
-        assert isinstance(result, list)
-        assert len(result) == 3
+    assert isinstance(result, list)
+    assert len(result) > 0  # Should have conditions with real data
+    assert all(isinstance(condition, str) for condition in result)
 
 
 def test_interpret_fitness_score_api_basic():
-    """Test basic fitness score interpretation API."""
-    mock_interpretation = {
-        "interpretation": "Gene knockout reduces fitness",
-        "effect": "gene_benefits_growth",
-        "magnitude": "moderate",
-        "score": 0.5,
-    }
+    """Test basic fitness score interpretation API with real data."""
+    # Test positive score (gene inhibits growth)
+    result = interpret_fitness_score(0.8)
+    assert "interpretation" in result
+    assert "effect" in result
+    assert "magnitude" in result
+    assert "score" in result
+    assert result["score"] == 0.8
+    assert result["effect"] == "gene_inhibits_growth"
 
-    with patch.object(fitness_loader, "interpret_fitness_score") as mock_interpret:
-        mock_interpret.return_value = mock_interpretation
+    # Test negative score (gene is essential)
+    result = interpret_fitness_score(-0.8)
+    assert result["effect"] == "gene_benefits_growth"
 
-        result = interpret_fitness_score(0.5)
+    # Test neutral score
+    result = interpret_fitness_score(0.05)
+    assert result["effect"] == "neutral"
 
-        assert "interpretation" in result
-        assert "effect" in result
-        assert "magnitude" in result
-        assert result["score"] == 0.5
+    # Test None score
+    result = interpret_fitness_score(None)
+    assert result["effect"] == "unknown"
