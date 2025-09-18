@@ -30,8 +30,7 @@ from src.fitness_mcp.main import (
     expand_gene_condition_network,
     # Data loaders for setup
     fitness_loader,
-    module_loader,
-    pairs_loader,
+    # module_loader and pairs_loader removed - functionality replaced by MetadataRegistry
 )
 
 
@@ -254,42 +253,46 @@ class TestAPIContracts:
                 }
                 assert all(isinstance(summary[key], int) for key in int_fields)
 
-    def test_get_gene_modules_contract(self):
+    def test_get_gene_modules_contract(self, loaded_metadata_registry):
         """Test get_gene_modules API contract."""
         # Test with nonexistent gene
         result = get_gene_modules("nonexistent_gene_123")
         assert isinstance(result, dict)
         assert "error" in result
 
-        # Test with real gene if available
-        if module_loader.gene_to_modules:
-            gene_id = list(module_loader.gene_to_modules.keys())[0]
-            result = get_gene_modules(gene_id)
+        # Test with real gene (metadata_registry should have data loaded)
+        assert loaded_metadata_registry.gene_to_modules, (
+            "gene_to_modules should have data"
+        )
+        gene_id = list(loaded_metadata_registry.gene_to_modules.keys())[0]
+        result = get_gene_modules(gene_id)
 
-            if "error" not in result:
-                assert isinstance(result, dict)
-                required_keys = {"gene_id", "modules", "module_count"}
-                assert set(result.keys()) == required_keys
+        assert "error" not in result, f"Should find modules for gene {gene_id}"
+        assert isinstance(result, dict)
+        required_keys = {"gene_id", "modules", "module_count"}
+        assert set(result.keys()) == required_keys
 
-                assert result["gene_id"] == gene_id
-                assert isinstance(result["modules"], list)
-                assert isinstance(result["module_count"], int)
+        assert result["gene_id"] == gene_id
+        assert isinstance(result["modules"], list)
+        assert isinstance(result["module_count"], int)
 
-    def test_get_module_genes_contract(self):
+    def test_get_module_genes_contract(self, loaded_metadata_registry):
         """Test get_module_genes API contract."""
-        # Test with real module if available
-        if module_loader.module_to_genes:
-            module_id = list(module_loader.module_to_genes.keys())[0]
-            result = get_module_genes(module_id)
+        # Test with real module (metadata_registry should have data loaded)
+        assert loaded_metadata_registry.module_to_genes, (
+            "module_to_genes should have data"
+        )
+        module_id = list(loaded_metadata_registry.module_to_genes.keys())[0]
+        result = get_module_genes(module_id)
 
-            if "error" not in result:
-                assert isinstance(result, dict)
-                required_keys = {"module", "genes", "gene_count"}
-                assert set(result.keys()) == required_keys
+        assert "error" not in result, f"Should find genes for module {module_id}"
+        assert isinstance(result, dict)
+        required_keys = {"module", "genes", "gene_count"}
+        assert set(result.keys()) == required_keys
 
-                assert isinstance(result["module"], dict)
-                assert isinstance(result["genes"], list)
-                assert isinstance(result["gene_count"], int)
+        assert isinstance(result["module"], dict)
+        assert isinstance(result["genes"], list)
+        assert isinstance(result["gene_count"], int)
 
     def test_search_modules_contract(self):
         """Test search_modules API contract."""
@@ -313,119 +316,129 @@ class TestAPIContracts:
             required_keys = {"module_id", "name", "category", "count"}
             assert set(module.keys()) == required_keys
 
-    def test_get_conditions_for_gene_contract(self):
+    def test_get_conditions_for_gene_contract(self, loaded_metadata_registry):
         """Test get_conditions_for_gene API contract."""
         # Test with nonexistent gene
         result = get_conditions_for_gene("nonexistent_gene_123")
         assert isinstance(result, dict)
         assert "error" in result
 
-        # Test with real gene if available
-        if pairs_loader.gene_to_conditions:
-            gene_id = list(pairs_loader.gene_to_conditions.keys())[0]
-            result = get_conditions_for_gene(gene_id)
+        # Test with real gene (metadata_registry should have data loaded)
+        assert loaded_metadata_registry.gene_to_conditions, (
+            "gene_to_conditions should have data"
+        )
+        gene_id = list(loaded_metadata_registry.gene_to_conditions.keys())[0]
+        result = get_conditions_for_gene(gene_id)
 
-            if "error" not in result:
-                assert isinstance(result, dict)
-                required_keys = {
-                    "gene_id",
-                    "conditions",
-                    "total_conditions",
-                    "interpretation",
-                }
-                assert set(result.keys()) == required_keys
+        assert "error" not in result, f"Should find conditions for gene {gene_id}"
+        assert isinstance(result, dict)
+        required_keys = {
+            "gene_id",
+            "conditions",
+            "total_conditions",
+            "interpretation",
+        }
+        assert set(result.keys()) == required_keys
 
-                assert result["gene_id"] == gene_id
-                assert isinstance(result["conditions"], list)
-                assert isinstance(result["total_conditions"], int)
-                assert isinstance(result["interpretation"], str)
+        assert result["gene_id"] == gene_id
+        assert isinstance(result["conditions"], list)
+        assert isinstance(result["total_conditions"], int)
+        assert isinstance(result["interpretation"], str)
 
-    def test_get_genes_for_condition_contract(self):
+    def test_get_genes_for_condition_contract(self, loaded_metadata_registry):
         """Test get_genes_for_condition API contract."""
         # Test with nonexistent condition
         result = get_genes_for_condition("nonexistent_condition_123")
         assert isinstance(result, dict)
         assert "error" in result
 
-        # Test with real condition if available
-        if pairs_loader.condition_to_genes:
-            condition_id = list(pairs_loader.condition_to_genes.keys())[0]
-            result = get_genes_for_condition(condition_id)
+        # Test with real condition (metadata_registry should have data loaded)
+        assert loaded_metadata_registry.condition_to_genes, (
+            "condition_to_genes should have data"
+        )
+        condition_id = list(loaded_metadata_registry.condition_to_genes.keys())[0]
+        result = get_genes_for_condition(condition_id)
 
-            if "error" not in result:
-                assert isinstance(result, dict)
-                required_keys = {
-                    "condition_id",
-                    "genes",
-                    "total_genes",
-                    "interpretation",
-                }
-                assert set(result.keys()) == required_keys
+        assert "error" not in result, f"Should find genes for condition {condition_id}"
+        assert isinstance(result, dict)
+        required_keys = {
+            "condition_id",
+            "genes",
+            "total_genes",
+            "interpretation",
+        }
+        assert set(result.keys()) == required_keys
 
-                assert result["condition_id"] == condition_id
-                assert isinstance(result["genes"], list)
-                assert isinstance(result["total_genes"], int)
-                assert isinstance(result["interpretation"], str)
+        assert result["condition_id"] == condition_id
+        assert isinstance(result["genes"], list)
+        assert isinstance(result["total_genes"], int)
+        assert isinstance(result["interpretation"], str)
 
-    def test_expand_gene_condition_network_contract(self):
+    def test_expand_gene_condition_network_contract(self, loaded_metadata_registry):
         """Test expand_gene_condition_network API contract."""
         # Test with nonexistent pair
         result = expand_gene_condition_network("gene123", "condition123")
         assert isinstance(result, dict)
         assert "error" in result
 
-        # Test with real gene-condition pair if available
-        if pairs_loader.gene_to_conditions:
-            gene_id = list(pairs_loader.gene_to_conditions.keys())[0]
-            conditions = pairs_loader.gene_to_conditions[gene_id]
+        # Test with real gene-condition pair (metadata_registry should have data loaded)
+        assert loaded_metadata_registry.gene_to_conditions, (
+            "gene_to_conditions should have data"
+        )
+        gene_id = list(loaded_metadata_registry.gene_to_conditions.keys())[0]
+        conditions = loaded_metadata_registry.gene_to_conditions[gene_id]
 
-            if conditions:
-                condition_id = conditions[0]["condition"]
-                result = expand_gene_condition_network(gene_id, condition_id)
+        assert len(conditions) > 0, (
+            f"Gene {gene_id} should have conditions in loaded data"
+        )
+        condition_id = conditions[0]  # metadata_registry stores condition IDs directly
+        result = expand_gene_condition_network(gene_id, condition_id)
 
-                if "error" not in result:
-                    assert isinstance(result, dict)
-                    required_keys = {
-                        "query",
-                        "first_hop",
-                        "second_hop",
-                        "network_size",
-                        "interpretation",
-                    }
-                    assert set(result.keys()) == required_keys
+        assert "error" not in result, (
+            f"Should expand network for {gene_id}-{condition_id}"
+        )
+        assert isinstance(result, dict)
+        required_keys = {
+            "query",
+            "first_hop",
+            "second_hop",
+            "network_size",
+            "interpretation",
+        }
+        assert set(result.keys()) == required_keys
 
-                    # Query structure
-                    query = result["query"]
-                    query_keys = {"gene_id", "condition_id", "fitness_value"}
-                    assert set(query.keys()) == query_keys
+        # Query structure
+        query = result["query"]
+        query_keys = {"gene_id", "condition_id", "fitness_value"}
+        assert set(query.keys()) == query_keys
 
-                    # First hop structure
-                    first_hop = result["first_hop"]
-                    first_hop_keys = {
-                        "conditions_for_query_gene",
-                        "genes_for_query_condition",
-                        "num_conditions",
-                        "num_genes",
-                    }
-                    assert set(first_hop.keys()) == first_hop_keys
+        # First hop structure
+        first_hop = result["first_hop"]
+        first_hop_keys = {
+            "conditions_for_query_gene",
+            "genes_for_query_condition",
+            "num_conditions",
+            "num_genes",
+        }
+        assert set(first_hop.keys()) == first_hop_keys
 
-                    # Second hop structure
-                    second_hop = result["second_hop"]
-                    second_hop_keys = {
-                        "all_genes_in_network",
-                        "all_conditions_in_network",
-                        "num_total_genes",
-                        "num_total_conditions",
-                    }
-                    assert set(second_hop.keys()) == second_hop_keys
+        # Second hop structure
+        second_hop = result["second_hop"]
+        second_hop_keys = {
+            "all_genes_in_network",
+            "all_conditions_in_network",
+            "num_total_genes",
+            "num_total_conditions",
+        }
+        assert set(second_hop.keys()) == second_hop_keys
 
-                    # Network size structure
-                    network_size = result["network_size"]
-                    network_size_keys = {
-                        "gene_expansion_factor",
-                        "condition_expansion_factor",
-                    }
-                    assert set(network_size.keys()) == network_size_keys
+        # Network size structure
+        network_size = result["network_size"]
+        network_size_keys = {
+            "gene_expansion_factor",
+            "condition_expansion_factor",
+        }
+        assert set(network_size.keys()) == network_size_keys
 
 
 class TestMCPToolInventory:

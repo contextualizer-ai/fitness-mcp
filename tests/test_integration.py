@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 from src.fitness_mcp.main import (
     fitness_loader,
-    module_loader,
+    # module_loader removed - functionality replaced by MetadataRegistry
     metadata_registry,
     get_gene_info,
     get_gene_fitness,
@@ -58,31 +58,8 @@ class TestIntegrationWithRealData:
             fitness_loader.data_file = original_data_file
             fitness_loader.exp_desc_file = original_exp_file
 
-    def test_module_loader_real_data(self, loaded_metadata_registry):
-        """Test module loader with real data files."""
-        # Data is already loaded via fixture
-        modules_file = "data/RbTnSeq_modules_t1e-7.csv"
-        meta_file = "data/module_meta.tsv"
-        # Temporarily override file paths
-        original_modules_file = module_loader.modules_file
-        original_meta_file = module_loader.meta_file
-
-        try:
-            module_loader.modules_file = modules_file
-            module_loader.meta_file = meta_file
-            module_loader.loaded = False  # Force reload
-
-            module_loader.load_data()
-
-            assert module_loader.loaded
-            assert len(module_loader.gene_to_modules) > 0
-            assert len(module_loader.module_to_genes) > 0
-            assert len(module_loader.module_meta) > 0
-
-        finally:
-            # Restore original paths
-            module_loader.modules_file = original_modules_file
-            module_loader.meta_file = original_meta_file
+    # test_module_loader_real_data removed - ModuleDataLoader was replaced by MetadataRegistry
+    # Equivalent functionality is tested in tests/test_metadata_registry.py
 
     def test_search_genes_integration(self):
         """Test search_genes integration with real data."""
