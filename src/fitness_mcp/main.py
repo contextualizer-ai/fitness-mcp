@@ -577,6 +577,7 @@ class PairsDataLoader:
         _mtime: Last modification time of the data file
         _lock: Threading lock for safe concurrent access
     """
+
     def __init__(self, data_file: str = "data/fit_t_pairs_threshold_2_long.tab"):
         """Initialize the pairs data loader.
 

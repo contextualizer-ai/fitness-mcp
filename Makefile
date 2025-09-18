@@ -1,7 +1,7 @@
-.PHONY: test-coverage clean install dev format lint all server build upload-test upload release deptry mypy test-mcp test-mcp-extended test-integration test-version test-gene-fitness test-biological-analysis demo-claude-code test-claude-mcp
+.PHONY: test-coverage clean install dev format lint all server build upload-test upload release deptry mypy test-fitness-protocol test-gene-analysis test-integration test-version test-gene-fitness test-biological-analysis demo-claude-code test-claude-mcp
 
-# Default target
-all: clean install dev test-coverage format lint mypy deptry build test-mcp test-mcp-extended test-integration test-version
+# Default target - ordered workflow: format -> lint -> typecheck -> deps -> tests -> jsonrpc -> build
+all: clean install dev format lint mypy deptry test-coverage test-fitness-protocol test-gene-analysis test-integration test-version build
 
 # Install everything for development
 dev:
@@ -90,8 +90,8 @@ demo-biological:
 	@echo "✅ Fitness-MCP provides structured biological insights for gene function analysis!"
 
 # MCP Server testing
-test-mcp:
-	@echo "Testing MCP protocol handshake..."
+test-fitness-protocol:
+	@echo "Testing fitness MCP protocol handshake..."
 	@if command -v timeout >/dev/null 2>&1; then \
 		TIMEOUT_CMD="timeout"; \
 	elif command -v gtimeout >/dev/null 2>&1; then \
@@ -107,8 +107,8 @@ test-mcp:
 	 echo '{"jsonrpc": "2.0", "method": "tools/list", "id": 2}') | \
 	if [ -n "$$TIMEOUT_CMD" ]; then $$TIMEOUT_CMD 5 uv run fitness-mcp; else uv run fitness-mcp & PID=$$!; sleep 5; kill $$PID 2>/dev/null || true; fi
 
-test-mcp-extended:
-	@echo "Testing MCP protocol with fitness analysis..."
+test-gene-analysis:
+	@echo "Testing fitness MCP with gene analysis capabilities..."
 	@if command -v timeout >/dev/null 2>&1; then \
 		TIMEOUT_CMD="timeout"; \
 	elif command -v gtimeout >/dev/null 2>&1; then \

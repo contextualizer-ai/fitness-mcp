@@ -6,9 +6,12 @@ Process fit_t.tab file to create gene-condition pairs where |value| > 4
 import csv
 import sys
 from pathlib import Path
+from typing import List, Tuple, Union
 
 
-def process_fit_t_file(input_path, output_path, threshold=2):
+def process_fit_t_file(
+    input_path: Union[str, Path], output_path: Union[str, Path], threshold: float = 2
+) -> None:
     """
     Process fit_t.tab file and create pairs for values where |value| > threshold
 
@@ -17,7 +20,7 @@ def process_fit_t_file(input_path, output_path, threshold=2):
         output_path: Path to output pairs file
         threshold: Absolute value threshold (default: 2)
     """
-    pairs = []
+    pairs: List[Tuple[str, str, float]] = []
 
     with open(input_path, "r", encoding="utf-8") as infile:
         reader = csv.reader(infile, delimiter="\t")
@@ -49,14 +52,14 @@ def process_fit_t_file(input_path, output_path, threshold=2):
         # Write header
         writer.writerow(["gene_id", "condition_id", "value"])
         # Write pairs
-        for gene_id, condition_id, value in pairs:
-            writer.writerow([gene_id, condition_id, value])
+        for gene_id, condition_id, fitness_value in pairs:
+            writer.writerow([gene_id, condition_id, str(fitness_value)])
 
     print(f"Processed {len(pairs)} gene-condition pairs with |value| > {threshold}")
     print(f"Output written to: {output_path}")
 
 
-def main():
+def main() -> None:
     # Default paths and threshold
     project_root = Path(__file__).parent.parent.parent
     input_file = project_root / "data" / "fit_t.tab"

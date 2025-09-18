@@ -136,11 +136,11 @@ class TestFitnessDataLoader:
         # Touch file to change mtime deterministically
         with open(self.data_file, "a") as f:
             f.write("# modified")
-        
+
         # Manually set mtime to a new value to ensure reload is needed
         current_mtime = os.path.getmtime(self.data_file)
         os.utime(self.data_file, (current_mtime + 10, current_mtime + 10))
-        
+
         assert loader._needs_reload()
 
     def test_load_data_missing_files(self):
@@ -539,7 +539,7 @@ class TestModuleDataLoader:
         # Force reload by changing file mtime deterministically
         with open(self.modules_file, "a") as f:
             f.write("")
-        
+
         # Manually set mtime to a new value to ensure reload is needed
         current_mtime = os.path.getmtime(self.modules_file)
         os.utime(self.modules_file, (current_mtime + 2, current_mtime + 2))
