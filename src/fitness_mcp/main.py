@@ -1174,6 +1174,155 @@ def expand_gene_condition_network(gene_id: str, condition_id: str) -> Dict[str, 
     }
 
 
+def build_iterative_module(gene_id: str, condition_id: str, max_size: int = 15) -> Dict[str, Any]:
+    """
+    Build a tight functional module starting from a gene-condition pair.
+    
+    Uses an iterative approach that alternates between:
+    1. Adding genes that have significant fitness values in ALL current conditions
+    2. Adding conditions where ALL current genes have significant fitness values
+    
+    This creates coherent modules rather than large submatrices.
+    
+    Args:
+        gene_id: Starting gene locus ID (e.g., 'Atu0001')
+        condition_id: Starting condition ID
+        max_size: Maximum total elements (genes + conditions) in module
+        
+    Returns:
+        Dict containing the built module with genes, conditions, and build history
+    """
+    pairs_loader.load_data()
+    
+    # Verify starting pair exists
+    gene_conditions = pairs_loader.get_conditions_for_gene(gene_id)
+    if not any(c["condition"] == condition_id for c in gene_conditions):
+        return {"error": f"No significant fitness value found for gene {gene_id} in condition {condition_id}"}
+    
+    module_genes = {gene_id}
+    module_conditions = {condition_id}
+    
+    def get_genes_with_all_conditions(conditions):
+        """Find genes that have pairs with ALL the given conditions."""
+        if not conditions:
+            return set()
+        
+        # Start with genes from first condition, then intersect with others
+        all_genes = None
+        for cond in conditions:
+            cond_genes = {g["gene"] for g in pairs_loader.get_genes_for_condition(cond)}
+            if all_genes is None:
+                all_genes = cond_genes
+            else:
+                all_genes &= cond_genes
+        
+        return all_genes or set()
+    
+    def get_conditions_with_all_genes(genes):
+        """Find conditions that have pairs with ALL the given genes."""
+        if not genes:
+            return set()
+        
+        # Start with conditions from first gene, then intersect with others
+        all_conditions = None
+        for gene in genes:
+            gene_conds = {c["condition"] for c in pairs_loader.get_conditions_for_gene(gene)}
+            if all_conditions is None:
+                all_conditions = gene_conds
+            else:
+                all_conditions &= gene_conds
+        
+        return all_conditions or set()
+    
+    iteration = 0
+    max_iterations = max_size * 2
+    history = []
+    
+    while iteration < max_iterations:
+        iteration += 1
+        
+        if iteration % 2 == 1:
+            # Odd: Add a gene that has pairs with ALL current conditions
+            candidate_genes = get_genes_with_all_conditions(module_conditions)
+            candidate_genes -= module_genes
+            
+            if not candidate_genes:
+                history.append(f"Iteration {iteration}: No new genes found with all conditions")
+                break
+            
+            # Choose gene with highest average absolute fitness across conditions
+            best_gene = None
+            best_score = -1
+            
+            for gene in candidate_genes:
+                gene_data = pairs_loader.get_conditions_for_gene(gene)
+                relevant_values = [
+                    abs(c["value"]) for c in gene_data 
+                    if c["condition"] in module_conditions
+                ]
+                if relevant_values:
+                    avg_score = sum(relevant_values) / len(relevant_values)
+                    if avg_score > best_score:
+                        best_score = avg_score
+                        best_gene = gene
+            
+            if best_gene:
+                module_genes.add(best_gene)
+                history.append(f"Iteration {iteration}: Added gene {best_gene} (avg fitness: {best_score:.2f})")
+        
+        else:
+            # Even: Add a condition that has pairs with ALL current genes
+            candidate_conditions = get_conditions_with_all_genes(module_genes)
+            candidate_conditions -= module_conditions
+            
+            if not candidate_conditions:
+                history.append(f"Iteration {iteration}: No new conditions found with all genes")
+                break
+            
+            # Choose condition with highest average absolute fitness across genes
+            best_condition = None
+            best_score = -1
+            
+            for condition in candidate_conditions:
+                cond_data = pairs_loader.get_genes_for_condition(condition)
+                relevant_values = [
+                    abs(g["value"]) for g in cond_data 
+                    if g["gene"] in module_genes
+                ]
+                if relevant_values:
+                    avg_score = sum(relevant_values) / len(relevant_values)
+                    if avg_score > best_score:
+                        best_score = avg_score
+                        best_condition = condition
+            
+            if best_condition:
+                module_conditions.add(best_condition)
+                history.append(f"Iteration {iteration}: Added condition {best_condition} (avg fitness: {best_score:.2f})")
+        
+        # Stop if we've reached max size
+        if len(module_genes) + len(module_conditions) >= max_size:
+            history.append(f"Iteration {iteration}: Reached maximum size limit")
+            break
+    
+    return {
+        "start_gene": gene_id,
+        "start_condition": condition_id,
+        "module": {
+            "genes": sorted(module_genes),
+            "conditions": sorted(module_conditions),
+            "num_genes": len(module_genes),
+            "num_conditions": len(module_conditions),
+            "total_possible_pairs": len(module_genes) * len(module_conditions)
+        },
+        "build_info": {
+            "iterations": iteration,
+            "max_size_limit": max_size,
+            "history": history
+        },
+        "interpretation": "This module contains genes and conditions that are tightly connected through significant fitness effects"
+    }
+
+
 # MAIN SECTION
 # Create the FastMCP instance
 mcp = FastMCP("fitness_mcp")
@@ -1195,6 +1344,7 @@ mcp.tool(get_all_modules)
 mcp.tool(get_conditions_for_gene)
 mcp.tool(get_genes_for_condition)
 mcp.tool(expand_gene_condition_network)
+mcp.tool(build_iterative_module)
 
 
 def main() -> None:
