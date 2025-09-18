@@ -609,7 +609,7 @@ class PairsDataLoader:
             # Generate pairs file if it doesn't exist
             if not os.path.exists(self.data_file):
                 self._generate_pairs_file()
-            
+
             if not os.path.exists(self.data_file):
                 raise FileNotFoundError(f"Pairs data file not found: {self.data_file}")
 
@@ -657,12 +657,14 @@ class PairsDataLoader:
 
         # Source fitness data file
         fitness_file = os.path.join(os.path.dirname(self.data_file), "fit_t.tab")
-        
+
         if os.path.exists(fitness_file):
             print(f"Generating pairs file with threshold {threshold}...")
             generate_significant_fitness_pairs(fitness_file, self.data_file, threshold)
         else:
-            raise FileNotFoundError(f"Source fitness data file not found: {fitness_file}")
+            raise FileNotFoundError(
+                f"Source fitness data file not found: {fitness_file}"
+            )
 
     def get_conditions_for_gene(self, gene_id: str) -> List[Dict[str, Any]]:
         """Get all conditions where a gene has significant fitness values (|value| > 2).

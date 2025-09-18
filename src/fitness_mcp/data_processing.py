@@ -10,9 +10,7 @@ from typing import List, Tuple, Union
 
 
 def generate_significant_fitness_pairs(
-    fitness_file: Union[str, Path], 
-    pairs_file: Union[str, Path], 
-    threshold: float = 2.0
+    fitness_file: Union[str, Path], pairs_file: Union[str, Path], threshold: float = 2.0
 ) -> None:
     """
     Generate gene-condition pairs with significant fitness effects from fitness data.
@@ -60,7 +58,9 @@ def generate_significant_fitness_pairs(
         for gene_id, condition_id, float_value in pairs:
             writer.writerow([gene_id, condition_id, str(float_value)])
 
-    print(f"Generated {len(pairs)} significant gene-condition pairs with |value| > {threshold}")
+    print(
+        f"Generated {len(pairs)} significant gene-condition pairs with |value| > {threshold}"
+    )
     print(f"Pairs file written to: {pairs_file}")
 
 
