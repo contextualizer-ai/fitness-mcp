@@ -6,23 +6,39 @@ This document establishes development patterns and guidelines for the fitness-mc
 
 The Fitness MCP is a FastMCP server for analyzing gene fitness data from barcoded Agrobacterium mutant libraries. It efficiently handles a 90MB TSV dataset and provides scientific analysis tools for competitive fitness experiments.
 
-## Build & Test Commands
+## Key Development Commands
 
-### Development Setup
-- Install dependencies: `uv sync --dev`
+### Essential Commands
 - Run MCP server: `uv run fitness-mcp`
-- Run in global mode: `uvx fitness-mcp`
+- Test fitness protocol: `make test-fitness-protocol`
+- Test gene analysis: `make test-gene-analysis`
+- Claude demo: `make demo-atu3150-function`
+- Full development cycle: `make all`
 
-### Code Quality
-- Lint code: `uv run ruff check src/`
-- Fix lint issues: `uv run ruff check --fix src/`
-- Format code: `uv run ruff format src/`
-- Type check: `uv run mypy src/`
+### GitHub Issue Workflow
+For each GitHub issue, create a linked branch that will auto-close the issue when merged:
 
-### Testing
-- Run all tests: `uv run pytest`
-- Run specific test: `uv run pytest tests/test_main.py::test_gene_lookup`
-- Run with coverage: `uv run pytest --cov=fitness_mcp`
+```bash
+# Create and switch to issue branch (auto-links to GitHub issue)
+git checkout -b issue-21-metadata-registry
+
+# Work on the issue, making commits
+git add .
+git commit -m "Implement MetadataRegistry class
+
+Addresses issue #21 by creating centralized metadata access.
+🤖 Generated with [Claude Code](https://claude.ai/code)"
+
+# When ready, push and create PR
+git push -u origin issue-21-metadata-registry
+gh pr create --title "Implement Centralized Metadata Registry" --body "Closes #21"
+```
+
+**Branch Naming Convention**: `issue-{number}-{short-description}`
+- `issue-21-metadata-registry`
+- `issue-22-eliminate-redundancy`
+- `issue-23-consistent-naming`
+- `issue-24-posix-tools`
 
 ## Architecture Principles
 
@@ -166,28 +182,82 @@ return gene_info  # Raw internal data structure
 ```
 fitness-mcp/
 ├── src/fitness_mcp/
-│   └── main.py              # All MCP logic (currently monolithic)
+│   └── main.py              # All MCP logic with 3 data loaders
 ├── data/
 │   ├── fit_t.tab            # Main fitness data (90MB TSV)
-│   └── exp_organism_Agro.txt # Experimental condition descriptions  
+│   ├── exp_organism_Agro.txt # Experimental condition descriptions
+│   ├── RbTnSeq_modules_t1e-7.csv # Gene modules data
+│   ├── module_meta.tsv      # Module metadata
+│   └── fit_t_pairs_threshold_2_long.tab # Significant gene-condition pairs
 ├── tests/
-│   └── test_main.py         # Unit tests
+│   ├── test_main.py         # Core MCP tool tests
+│   └── test_integration.py  # Integration tests
+├── prompts/
+│   └── fitness-demo-prompt.txt # Claude demo prompt
+├── logs/                    # All log files (gitignored)
+├── Makefile                 # Build, test, and demo targets
 ├── pyproject.toml           # Project configuration
 ├── README.md                # User documentation
 └── CLAUDE.md                # Development guide (this file)
 ```
 
 ### Code Organization Within main.py
-The current monolithic structure is organized in logical sections:
+The monolithic structure contains three main data loaders:
 
-1. **Imports and Setup** (lines 1-20)
-2. **Data Loading Class** (lines 21-340) 
-3. **MCP Tool Functions** (lines 341-580)
-4. **FastMCP Registration** (lines 581-600)
+1. **FitnessDataLoader** (lines 214-477) - Main fitness data with thread safety
+2. **ModuleDataLoader** (lines 23-212) - Gene functional modules
+3. **PairsDataLoader** (lines 563-663) - Significant fitness pairs
+4. **MCP Tool Functions** (lines 672-1175) - 16 analysis tools
+5. **FastMCP Registration** (lines 1177-1206) - Server setup
 
-Future refactoring should maintain this logical separation.
+All loaders follow TSV best practices with caching, file change detection, and thread safety.
 
 ## Testing Standards
+
+### No Mocks or Patches Policy
+**NEVER use mocks, patches, or similar test doubles.** Tests should use real implementations and real data.
+
+```python
+# ✅ Good: Test with real data loaders and real logic
+def test_get_gene_info():
+    result = get_gene_info("Atu0001")
+    assert result["locusId"] == "Atu0001"
+
+# ❌ Bad: Using mocks or patches
+@patch.object(fitness_loader, 'get_gene_info')
+def test_get_gene_info_mocked(mock_get):  # DON'T DO THIS
+    mock_get.return_value = {'locusId': 'Atu0001'}
+```
+
+### Conservative Error Handling in Tests
+Be very conservative with try/except in tests. If something fails, we want to know about it immediately.
+
+```python
+# ✅ Good: Let exceptions bubble up
+def test_gene_lookup():
+    result = get_gene_info("Atu0001")  # Will fail clearly if broken
+    assert "locusId" in result
+
+# ❌ Bad: Hiding failures with try/except
+def test_gene_lookup():
+    try:
+        result = get_gene_info("Atu0001")
+    except Exception:
+        assert False  # Doesn't show what actually failed
+```
+
+### No Async/Batch Processing
+**NEVER use async/await or batch processing.** MCP tools are called by LLM agents (Claude, Goose) that expect synchronous responses.
+
+```python
+# ✅ Good: Synchronous tool functions
+def get_gene_info(gene_id: str) -> Dict[str, Any]:
+    return fitness_loader.get_gene_info(gene_id)
+
+# ❌ Bad: Async functions break MCP protocol
+async def get_gene_info_async(gene_id: str) -> Dict[str, Any]:  # DON'T DO THIS
+    return await fitness_loader.get_gene_info_async(gene_id)
+```
 
 ### Test Categories
 Use pytest markers for different test types:
@@ -321,6 +391,41 @@ gene_id = row[0]  # Get gene ID from first column
 - Log meaningful events for debugging
 - Handle edge cases in biological data gracefully
 - Provide clear error messages for common user mistakes
+
+---
+
+## GitHub Issue Workflow
+
+When working on GitHub issues, follow this systematic approach:
+
+1. **Create and checkout linked branch**: `git checkout -b issue-{number}-{short-description}`
+2. **Bring feature branch up to date with main**: Feature branches MUST always be brought up to date with main before completing work
+3. **Work on implementation** following all guidelines in this document
+4. **Test thoroughly** with comprehensive test suite
+5. **Run `make all` until all problems are fixed** - This is mandatory before completion
+6. **Commit and push** when complete
+7. **Create pull request** that auto-closes the issue when merged
+
+### Branch Naming Convention
+- Format: `issue-{number}-{short-description}`
+- Examples: `issue-21-metadata-registry`, `issue-22-data-redundancy`
+- Use kebab-case for descriptions
+- Keep descriptions concise but descriptive
+
+### Task Completion Requirements
+**ALWAYS run `make all` before considering any task complete.** This command runs the full validation pipeline:
+- Code formatting and linting
+- Type checking 
+- Comprehensive test suite
+- Coverage verification
+- Integration testing
+- MCP protocol validation
+
+**Repeat `make all` until zero errors remain.** Only then is a task ready for commit and push. This ensures:
+- No regressions introduced
+- All code quality standards met
+- Full functionality preserved
+- Ready for production deployment
 
 ---
 

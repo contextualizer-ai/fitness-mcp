@@ -1,7 +1,7 @@
-.PHONY: test-coverage clean install dev format lint all server build upload-test upload release deptry mypy test-mcp test-mcp-extended test-integration test-version test-gene-fitness test-biological-analysis demo-claude-code test-claude-mcp
+.PHONY: test clean install dev format lint all server build upload-test upload release deptry mypy test-fitness-protocol test-gene-analysis test-version test-claude-mcp
 
-# Default target
-all: clean install dev test-coverage format lint mypy deptry build test-mcp test-mcp-extended test-integration test-version
+# Default target - ordered workflow: format -> lint -> typecheck -> deps -> tests -> jsonrpc -> build  
+all: clean install dev format lint mypy deptry test build test-fitness-protocol test-gene-analysis test-version
 
 # Install everything for development
 dev:
@@ -11,9 +11,9 @@ dev:
 install:
 	uv sync
 
-# Run tests with coverage
-test-coverage:
-	uv run pytest --cov=src/fitness_mcp --cov-report=html --cov-report=term tests/
+# Run all tests with coverage and timing (single comprehensive test target)
+test:
+	uv run pytest --cov=src/fitness_mcp --cov-report=html --cov-report=term --durations=10 tests/
 
 # Clean up build artifacts
 clean:
@@ -25,6 +25,7 @@ clean:
 	find . -type d -name __pycache__ -exec rm -rf {} +
 	find . -type f -name "*.pyc" -delete
 	rm -rf src/*.egg-info
+	rm -rf logs/
 
 # Run server mode
 server:
@@ -59,23 +60,8 @@ upload:
 	uv publish
 
 # Complete release workflow
-release: clean install test-coverage build
+release: clean install test build
 
-# Integration Testing
-test-integration:
-	@echo "🧬 Testing fitness MCP integration..."
-	uv run pytest tests/test_api.py -v
-
-# Gene Fitness Analysis Testing
-test-gene-fitness:
-	@echo "🔬 Testing gene fitness analysis..."
-	uv run pytest tests/test_main.py::test_gene_fitness_analysis -v -s
-
-# Biological Analysis Testing
-test-biological-analysis:
-	@echo "🧪 Testing biological insights..."
-	uv run pytest tests/test_main.py::test_essential_genes -v -s
-	uv run pytest tests/test_main.py::test_growth_inhibitors -v -s
 
 # Demo biological functionality  
 demo-biological:
@@ -90,8 +76,8 @@ demo-biological:
 	@echo "✅ Fitness-MCP provides structured biological insights for gene function analysis!"
 
 # MCP Server testing
-test-mcp:
-	@echo "Testing MCP protocol handshake..."
+test-fitness-protocol:
+	@echo "Testing fitness MCP protocol handshake..."
 	@if command -v timeout >/dev/null 2>&1; then \
 		TIMEOUT_CMD="timeout"; \
 	elif command -v gtimeout >/dev/null 2>&1; then \
@@ -104,11 +90,11 @@ test-mcp:
 	 sleep 0.1; \
 	 echo '{"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}}'; \
 	 sleep 0.1; \
-	 echo '{"jsonrpc": "2.0", "method": "tools/list", "id": 2}') | \
+	 echo '{"jsonrpc": "2.0", "method": "tools/call", "params": {"name": "get_gene_info", "arguments": {"gene_id": "Atu3150"}}, "id": 2}') | \
 	if [ -n "$$TIMEOUT_CMD" ]; then $$TIMEOUT_CMD 5 uv run fitness-mcp; else uv run fitness-mcp & PID=$$!; sleep 5; kill $$PID 2>/dev/null || true; fi
 
-test-mcp-extended:
-	@echo "Testing MCP protocol with fitness analysis..."
+test-gene-analysis:
+	@echo "Testing gene fitness analysis via MCP..."
 	@if command -v timeout >/dev/null 2>&1; then \
 		TIMEOUT_CMD="timeout"; \
 	elif command -v gtimeout >/dev/null 2>&1; then \
@@ -121,30 +107,19 @@ test-mcp-extended:
 	 sleep 0.1; \
 	 echo '{"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}}'; \
 	 sleep 0.1; \
-	 echo '{"jsonrpc": "2.0", "method": "tools/call", "params": {"name": "search_genes", "arguments": {"query": "ribosome", "limit": 3}}, "id": 3}'; \
+	 echo '{"jsonrpc": "2.0", "method": "tools/call", "params": {"name": "search_genes", "arguments": {"query": "ribosome", "limit": 2}}, "id": 3}'; \
 	 sleep 0.1; \
-	 echo '{"jsonrpc": "2.0", "method": "tools/call", "params": {"name": "find_essential_genes", "arguments": {"condition_filter": "pH", "min_fitness_threshold": 0.5, "limit": 2}}, "id": 4}') | \
+	 echo '{"jsonrpc": "2.0", "method": "tools/call", "params": {"name": "find_essential_genes", "arguments": {"condition_filter": "pH", "min_fitness_threshold": 1.0, "limit": 1}}, "id": 4}') | \
 	if [ -n "$$TIMEOUT_CMD" ]; then $$TIMEOUT_CMD 10 uv run fitness-mcp; else uv run fitness-mcp & PID=$$!; sleep 10; kill $$PID 2>/dev/null || true; fi
 
-# Test version flag
+# Package validation (simple import test)
 test-version:
 	@echo "🔢 Testing package installation..."
-	@echo "Package version:"
-	@uv run python -c "import fitness_mcp; print('fitness_mcp package loaded successfully')"
-
-# Data validation tests
-test-data:
-	@echo "📊 Testing fitness data loading..."
-	@uv run python -c "from fitness_mcp.main import fitness_loader; fitness_loader.load_data(); print(f'Loaded {len(fitness_loader.genes)} genes across {len(fitness_loader.conditions)} conditions')"
-
-# Performance testing with full dataset
-test-performance:
-	@echo "⚡ Testing performance with full dataset..."
-	@time uv run python -c "from fitness_mcp.main import fitness_loader, search_genes; fitness_loader.load_data(); print('Data loaded'); results = search_genes('ribosome', 10); print(f'Found {len(results)} genes')"
+	@uv run python -c "import fitness_mcp; print('✅ fitness_mcp package loaded successfully')"
 
 # Directory creation targets (not .PHONY since they create directories)
-data/outputs:
-	@echo "Creating outputs directory..."
+logs:
+	@echo "Creating logs directory..."
 	@mkdir -p $@
 
 prompts:
@@ -160,76 +135,31 @@ test-claude-mcp:
 		--mcp-config .mcp.json \
 		--dangerously-skip-permissions \
 		--print "Test the fitness-mcp by listing available tools and then search for genes containing 'ribosome' and return the top 3 results" \
-		2>&1 | tee claude-mcp-test.log
+		2>&1 | tee logs/claude-mcp-test.log
 
 # Analyze specific gene function using fitness data (Atu3150 lactose transporter example)
 demo-atu3150-function: prompts/fitness-demo-prompt.txt ## Analyze what Atu3150 does using fitness data
 	@echo "🧬 Analyzing Atu3150 gene function using fitness data..."
 	@echo "This demo shows how fitness analysis reveals Atu3150 is a lactose transporter"
 	claude \
-		--debug \
-		--verbose \
-		--mcp-config .mcp.json \
+		--mcp-config claude-mcp-config.json \
 		--dangerously-skip-permissions \
 		--print "$(shell cat prompts/fitness-demo-prompt.txt)" \
-		2>&1 | tee atu3150-function-analysis.log
-	@echo "✅ Check atu3150-function-analysis.log for biological insights"
+		2>&1 | tee logs/atu3150-function-analysis.log
+	@echo "✅ Check logs/atu3150-function-analysis.log for biological insights"
 
-# Comprehensive biological analysis showcasing all fitness MCP capabilities
-demo-biological-analysis: prompts/comprehensive-fitness-demo.txt ## Comprehensive biological gene analysis
-	@echo "🧬 Running comprehensive biological analysis demo..."
-	@echo "This demo showcases:"
-	@echo "  - Gene function analysis through fitness patterns"
-	@echo "  - Essential gene identification in specific conditions"
-	@echo "  - Gene-condition network relationships" 
-	@echo "  - Functional module analysis"
-	@echo "  - Cross-referencing annotations with experimental data"
-	claude \
-		--debug \
-		--verbose \
-		--mcp-config .mcp.json \
-		--dangerously-skip-permissions \
-		--output-format json \
-		--print "$(shell cat prompts/comprehensive-fitness-demo.txt)" \
-		2>&1 | tee biological-analysis-demo.log
-	@echo "✅ Check biological-analysis-demo.log for comprehensive analysis results"
-
-# Gene-condition network expansion and interaction analysis
-demo-network-expansion: prompts/network-analysis-demo.txt ## Analyze gene-condition interaction networks
-	@echo "🔗 Running gene-condition network expansion demo..."
-	@echo "This demo showcases:"
-	@echo "  - Gene-condition fitness relationships"
-	@echo "  - Two-hop network expansion (genes→conditions→genes)"
-	@echo "  - Biological network interpretation"
-	@echo "  - Functional relationship discovery"
-	claude \
-		--debug \
-		--verbose \
-		--mcp-config .mcp.json \
-		--dangerously-skip-permissions \
-		--output-format json \
-		--print "$(shell cat prompts/network-analysis-demo.txt)" \
-		2>&1 | tee network-expansion-demo.log
-	@echo "✅ Check network-expansion-demo.log for network analysis results"
 
 # Show all available Claude Code demos
 demo-help: ## Show all available Claude Code demo options
-	@echo "🧬 FITNESS-MCP CLAUDE CODE DEMOS"
-	@echo "================================"
+	@echo "🧬 FITNESS-MCP CLAUDE CODE DEMO"
+	@echo "==============================="
 	@echo ""
-	@echo "📊 Available demo targets:"
+	@echo "📊 Available demo target:"
 	@echo "  make demo-atu3150-function   - Analyze Atu3150 gene function using fitness data"
-	@echo "  make demo-biological-analysis - Comprehensive biological gene analysis"
-	@echo "  make demo-network-expansion  - Analyze gene-condition interaction networks"
-	@echo "  make demo-claude-mcp         - Test MCP protocol integration"
 	@echo ""
-	@echo "🎯 Each demo creates a log file with results for analysis"
-	@echo "💡 Use --output-format json for structured data output"
+	@echo "🎯 Demo creates a log file in logs/ with results for analysis"
+	@echo "💡 Shows how to infer gene function from fitness patterns!"
 
-# Backward compatibility aliases (deprecated - use new names above)
-demo-claude-code: demo-atu3150-function
-demo-claude-comprehensive: demo-biological-analysis  
-demo-claude-network: demo-network-expansion
 
 # FITNESS MCP - Claude Desktop config:
 #   Add to ~/Library/Application Support/Claude/claude_desktop_config.json:
