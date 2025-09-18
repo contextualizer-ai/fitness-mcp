@@ -38,13 +38,7 @@ from src.fitness_mcp.main import (
 class TestAPIContracts:
     """Test API contracts for all 16 MCP tools."""
 
-    def setup_method(self):
-        """Ensure data is loaded before each test."""
-        fitness_loader.load_data()
-        module_loader.load_data()
-        pairs_loader.load_data()
-
-    def test_get_gene_info_contract(self):
+    def test_get_gene_info_contract(self, loaded_metadata_registry, sample_gene_id):
         """Test get_gene_info API contract."""
         # Test with nonexistent gene (should always work)
         result = get_gene_info("nonexistent_gene_123")

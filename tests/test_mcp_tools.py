@@ -1,6 +1,6 @@
 """Tests for MCP tool functions in fitness_mcp.main module.
 
-Tests use real data loaders and real implementations.
+Tests use real data and session fixtures for performance.
 No mocks or patches are used per project policy.
 """
 
@@ -18,21 +18,18 @@ from src.fitness_mcp.main import (
     get_module_genes,
     search_modules,
     get_all_modules,
-    fitness_loader,
-    module_loader,
 )
 
 
 class TestMCPToolFunctions:
     """Test cases for MCP tool functions using real data."""
 
-    def test_get_gene_info_success(self):
+    def test_get_gene_info_success(self, loaded_metadata_registry):
         """Test get_gene_info with existing gene."""
-        fitness_loader.load_data()
-
+        # Data is already loaded via fixture
         # Test with a known gene if it exists
-        if fitness_loader.genes:
-            gene_id = list(fitness_loader.genes.keys())[0]
+        if loaded_metadata_registry.genes:
+            gene_id = list(loaded_metadata_registry.genes.keys())[0]
             result = get_gene_info(gene_id)
 
             if "error" not in result:
@@ -50,13 +47,12 @@ class TestMCPToolFunctions:
         assert "error" in result
         assert "not found" in result["error"]
 
-    def test_get_gene_fitness(self):
+    def test_get_gene_fitness(self, loaded_metadata_registry):
         """Test get_gene_fitness function."""
-        fitness_loader.load_data()
-
+        # Data is already loaded via fixture
         # Test with a known gene if it exists
-        if fitness_loader.genes:
-            gene_id = list(fitness_loader.genes.keys())[0]
+        if loaded_metadata_registry.genes:
+            gene_id = list(loaded_metadata_registry.genes.keys())[0]
             result = get_gene_fitness(gene_id)
 
             if "error" not in result:
@@ -78,10 +74,9 @@ class TestMCPToolFunctions:
                     assert "condition" in condition_data
                     assert "fitness" in condition_data
 
-    def test_search_genes(self):
+    def test_search_genes(self, loaded_metadata_registry):
         """Test search_genes function."""
-        fitness_loader.load_data()
-
+        # Data is already loaded via fixture
         # Use a common term likely to find results
         result = search_genes("ribosom", 5)
 
@@ -92,20 +87,18 @@ class TestMCPToolFunctions:
             assert "sysName" in gene
             assert "description" in gene
 
-    def test_get_growth_conditions(self):
+    def test_get_growth_conditions(self, loaded_metadata_registry):
         """Test get_growth_conditions function."""
-        fitness_loader.load_data()
-
+        # Data is already loaded via fixture
         result = get_growth_conditions()
 
         assert isinstance(result, list)
         if result:
             assert isinstance(result[0], str)
 
-    def test_get_growth_conditions_with_filter(self):
+    def test_get_growth_conditions_with_filter(self, loaded_metadata_registry):
         """Test get_growth_conditions with filter."""
-        fitness_loader.load_data()
-
+        # Data is already loaded via fixture
         result = get_growth_conditions("pH")
 
         assert isinstance(result, list)
@@ -113,13 +106,12 @@ class TestMCPToolFunctions:
         for condition in result:
             assert "pH" in condition or "ph" in condition.lower()
 
-    def test_get_condition_details(self):
+    def test_get_condition_details(self, loaded_metadata_registry):
         """Test get_condition_details function."""
-        fitness_loader.load_data()
-
+        # Data is already loaded via fixture
         # Use a real condition if available
-        if fitness_loader.conditions:
-            condition_name = fitness_loader.conditions[0]
+        if loaded_metadata_registry.conditions:
+            condition_name = list(loaded_metadata_registry.conditions.keys())[0]
             result = get_condition_details(condition_name)
 
             if "error" not in result:
@@ -128,7 +120,7 @@ class TestMCPToolFunctions:
 
     def test_interpret_fitness_score(self):
         """Test interpret_fitness_score function."""
-        # Test positive score (gene benefits growth)
+        # Test positive score (gene inhibits growth - knockout improves fitness)
         result = interpret_fitness_score(0.8)
 
         assert "interpretation" in result
@@ -136,11 +128,11 @@ class TestMCPToolFunctions:
         assert "magnitude" in result
         assert "score" in result
         assert result["score"] == 0.8
-        assert result["effect"] == "gene_benefits_growth"
-
-        # Test negative score (gene inhibits growth)
-        result = interpret_fitness_score(-0.8)
         assert result["effect"] == "gene_inhibits_growth"
+
+        # Test negative score (gene benefits growth - knockout reduces fitness)
+        result = interpret_fitness_score(-0.8)
+        assert result["effect"] == "gene_benefits_growth"
 
         # Test neutral score
         result = interpret_fitness_score(0.05)
@@ -150,10 +142,9 @@ class TestMCPToolFunctions:
         result = interpret_fitness_score(None)
         assert result["effect"] == "unknown"
 
-    def test_find_essential_genes(self):
+    def test_find_essential_genes(self, loaded_metadata_registry):
         """Test find_essential_genes function."""
-        fitness_loader.load_data()
-
+        # Data is already loaded via fixture
         result = find_essential_genes(limit=2)
 
         assert isinstance(result, list)
@@ -170,10 +161,9 @@ class TestMCPToolFunctions:
             assert "sysName" in gene
             assert "description" in gene
 
-    def test_find_growth_inhibitor_genes(self):
+    def test_find_growth_inhibitor_genes(self, loaded_metadata_registry):
         """Test find_growth_inhibitor_genes function."""
-        fitness_loader.load_data()
-
+        # Data is already loaded via fixture
         result = find_growth_inhibitor_genes(limit=2)
 
         assert isinstance(result, list)
@@ -184,13 +174,12 @@ class TestMCPToolFunctions:
             assert "inhibits_growth_in_conditions" in gene_entry
             assert "num_inhibitory_conditions" in gene_entry
 
-    def test_analyze_gene_fitness(self):
+    def test_analyze_gene_fitness(self, loaded_metadata_registry):
         """Test analyze_gene_fitness function."""
-        fitness_loader.load_data()
-
+        # Data is already loaded via fixture
         # Test with a known gene if available
-        if fitness_loader.genes:
-            gene_id = list(fitness_loader.genes.keys())[0]
+        if loaded_metadata_registry.genes:
+            gene_id = list(loaded_metadata_registry.genes.keys())[0]
             result = analyze_gene_fitness(gene_id)
 
             if "error" not in result:
@@ -216,13 +205,12 @@ class TestMCPToolFunctions:
 
         assert "error" in result
 
-    def test_get_gene_modules_success(self):
+    def test_get_gene_modules_success(self, loaded_metadata_registry):
         """Test get_gene_modules with existing gene."""
-        module_loader.load_data()
-
+        # Data is already loaded via fixture
         # Test with a known gene if modules exist
-        if module_loader.gene_to_modules:
-            gene_id = list(module_loader.gene_to_modules.keys())[0]
+        if loaded_metadata_registry.gene_to_modules:
+            gene_id = list(loaded_metadata_registry.gene_to_modules.keys())[0]
             result = get_gene_modules(gene_id)
 
             if "error" not in result:
@@ -240,13 +228,12 @@ class TestMCPToolFunctions:
         assert "error" in result
         assert "No modules found" in result["error"]
 
-    def test_get_module_genes(self):
+    def test_get_module_genes(self, loaded_metadata_registry):
         """Test get_module_genes function."""
-        module_loader.load_data()
-
+        # Data is already loaded via fixture
         # Test with a known module if modules exist
-        if module_loader.module_to_genes:
-            module_id = list(module_loader.module_to_genes.keys())[0]
+        if loaded_metadata_registry.module_to_genes:
+            module_id = list(loaded_metadata_registry.module_to_genes.keys())[0]
             result = get_module_genes(module_id)
 
             if "error" not in result:
@@ -254,10 +241,9 @@ class TestMCPToolFunctions:
                 assert "genes" in result
                 assert "gene_count" in result
 
-    def test_search_modules(self):
+    def test_search_modules(self, loaded_metadata_registry):
         """Test search_modules function."""
-        module_loader.load_data()
-
+        # Data is already loaded via fixture
         # Use a common term likely to find results
         result = search_modules("transport", 5)
 
@@ -268,10 +254,9 @@ class TestMCPToolFunctions:
             assert "genes" in module_entry
             assert "gene_count" in module_entry
 
-    def test_get_all_modules(self):
+    def test_get_all_modules(self, loaded_metadata_registry):
         """Test get_all_modules function."""
-        module_loader.load_data()
-
+        # Data is already loaded via fixture
         result = get_all_modules()
 
         assert isinstance(result, list)
@@ -286,10 +271,9 @@ class TestMCPToolFunctions:
 class TestComplexAnalysisFunctions:
     """Test cases for complex analysis functions with realistic scenarios."""
 
-    def test_find_essential_genes_with_filter(self):
+    def test_find_essential_genes_with_filter(self, loaded_metadata_registry):
         """Test find_essential_genes with condition filter."""
-        fitness_loader.load_data()
-
+        # Data is already loaded via fixture
         result = find_essential_genes(
             condition_filter="pH", min_fitness_threshold=0.5, limit=3
         )
@@ -304,10 +288,9 @@ class TestComplexAnalysisFunctions:
                     condition_name = condition["condition"]
                     assert "pH" in condition_name or "ph" in condition_name.lower()
 
-    def test_find_growth_inhibitor_genes_with_filter(self):
+    def test_find_growth_inhibitor_genes_with_filter(self, loaded_metadata_registry):
         """Test find_growth_inhibitor_genes with condition filter."""
-        fitness_loader.load_data()
-
+        # Data is already loaded via fixture
         result = find_growth_inhibitor_genes(
             condition_filter="stress", max_fitness_threshold=-0.5, limit=3
         )
@@ -322,13 +305,12 @@ class TestComplexAnalysisFunctions:
                     condition_name = condition["condition"]
                     assert "stress" in condition_name.lower()
 
-    def test_gene_fitness_categorization(self):
+    def test_gene_fitness_categorization(self, loaded_metadata_registry):
         """Test that fitness values are correctly categorized."""
-        fitness_loader.load_data()
-
+        # Data is already loaded via fixture
         # Test with a gene that has diverse fitness values
-        if fitness_loader.genes:
-            gene_id = list(fitness_loader.genes.keys())[0]
+        if loaded_metadata_registry.genes:
+            gene_id = list(loaded_metadata_registry.genes.keys())[0]
             result = analyze_gene_fitness(gene_id)
 
             if "error" not in result:

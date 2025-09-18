@@ -1,7 +1,7 @@
-.PHONY: test-coverage clean install dev format lint all server build upload-test upload release deptry mypy test-fitness-protocol test-gene-analysis test-integration test-version test-gene-fitness test-claude-mcp
+.PHONY: test clean install dev format lint all server build upload-test upload release deptry mypy test-fitness-protocol test-gene-analysis test-version test-claude-mcp
 
-# Default target - ordered workflow: format -> lint -> typecheck -> deps -> tests -> jsonrpc -> build
-all: clean install dev format lint mypy deptry test-coverage build test-fitness-protocol test-gene-analysis test-integration test-version
+# Default target - ordered workflow: format -> lint -> typecheck -> deps -> tests -> jsonrpc -> build  
+all: clean install dev format lint mypy deptry test build test-fitness-protocol test-gene-analysis test-version
 
 # Install everything for development
 dev:
@@ -11,9 +11,9 @@ dev:
 install:
 	uv sync
 
-# Run tests with coverage
-test-coverage:
-	uv run pytest --cov=src/fitness_mcp --cov-report=html --cov-report=term tests/
+# Run all tests with coverage and timing (single comprehensive test target)
+test:
+	uv run pytest --cov=src/fitness_mcp --cov-report=html --cov-report=term --durations=10 tests/
 
 # Clean up build artifacts
 clean:
@@ -60,23 +60,8 @@ upload:
 	uv publish
 
 # Complete release workflow
-release: clean install test-coverage build
+release: clean install test build
 
-# Integration Testing
-test-integration:
-	@echo "🧬 Testing fitness MCP integration..."
-	uv run pytest tests/test_api.py -v
-
-# Gene Fitness Analysis Testing
-test-gene-fitness:
-	@echo "🔬 Testing gene fitness analysis..."
-	uv run pytest tests/test_main.py::test_gene_fitness_analysis -v -s
-
-# Biological Analysis Testing
-test-biological-analysis:
-	@echo "🧪 Testing biological insights..."
-	uv run pytest tests/test_main.py::test_essential_genes -v -s
-	uv run pytest tests/test_main.py::test_growth_inhibitors -v -s
 
 # Demo biological functionality  
 demo-biological:
@@ -127,21 +112,10 @@ test-gene-analysis:
 	 echo '{"jsonrpc": "2.0", "method": "tools/call", "params": {"name": "find_essential_genes", "arguments": {"condition_filter": "pH", "min_fitness_threshold": 1.0, "limit": 1}}, "id": 4}') | \
 	if [ -n "$$TIMEOUT_CMD" ]; then $$TIMEOUT_CMD 10 uv run fitness-mcp; else uv run fitness-mcp & PID=$$!; sleep 10; kill $$PID 2>/dev/null || true; fi
 
-# Test version flag
+# Package validation (simple import test)
 test-version:
 	@echo "🔢 Testing package installation..."
-	@echo "Package version:"
-	@uv run python -c "import fitness_mcp; print('fitness_mcp package loaded successfully')"
-
-# Data validation tests
-test-data:
-	@echo "📊 Testing fitness data loading..."
-	@uv run python -c "from fitness_mcp.main import fitness_loader; fitness_loader.load_data(); print(f'Loaded {len(fitness_loader.genes)} genes across {len(fitness_loader.conditions)} conditions')"
-
-# Performance testing with full dataset
-test-performance:
-	@echo "⚡ Testing performance with full dataset..."
-	@time uv run python -c "from fitness_mcp.main import fitness_loader, search_genes; fitness_loader.load_data(); print('Data loaded'); results = search_genes('ribosome', 10); print(f'Found {len(results)} genes')"
+	@uv run python -c "import fitness_mcp; print('✅ fitness_mcp package loaded successfully')"
 
 # Directory creation targets (not .PHONY since they create directories)
 logs:
