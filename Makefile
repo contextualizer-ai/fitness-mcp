@@ -1,7 +1,7 @@
 .PHONY: test-coverage clean install dev format lint all server build upload-test upload release deptry mypy test-fitness-protocol test-gene-analysis test-integration test-version test-gene-fitness test-claude-mcp
 
-# Default target
-all: clean install dev test-coverage format lint mypy deptry build test-fitness-protocol test-gene-analysis test-integration test-version
+# Default target - ordered workflow: format -> lint -> typecheck -> deps -> tests -> jsonrpc -> build
+all: clean install dev format lint mypy deptry test-coverage build test-fitness-protocol test-gene-analysis test-integration test-version
 
 # Install everything for development
 dev:

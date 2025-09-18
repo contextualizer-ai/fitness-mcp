@@ -214,6 +214,51 @@ All loaders follow TSV best practices with caching, file change detection, and t
 
 ## Testing Standards
 
+### No Mocks or Patches Policy
+**NEVER use mocks, patches, or similar test doubles.** Tests should use real implementations and real data.
+
+```python
+# ✅ Good: Test with real data loaders and real logic
+def test_get_gene_info():
+    result = get_gene_info("Atu0001")
+    assert result["locusId"] == "Atu0001"
+
+# ❌ Bad: Using mocks or patches
+@patch.object(fitness_loader, 'get_gene_info')
+def test_get_gene_info_mocked(mock_get):  # DON'T DO THIS
+    mock_get.return_value = {'locusId': 'Atu0001'}
+```
+
+### Conservative Error Handling in Tests
+Be very conservative with try/except in tests. If something fails, we want to know about it immediately.
+
+```python
+# ✅ Good: Let exceptions bubble up
+def test_gene_lookup():
+    result = get_gene_info("Atu0001")  # Will fail clearly if broken
+    assert "locusId" in result
+
+# ❌ Bad: Hiding failures with try/except
+def test_gene_lookup():
+    try:
+        result = get_gene_info("Atu0001")
+    except Exception:
+        assert False  # Doesn't show what actually failed
+```
+
+### No Async/Batch Processing
+**NEVER use async/await or batch processing.** MCP tools are called by LLM agents (Claude, Goose) that expect synchronous responses.
+
+```python
+# ✅ Good: Synchronous tool functions
+def get_gene_info(gene_id: str) -> Dict[str, Any]:
+    return fitness_loader.get_gene_info(gene_id)
+
+# ❌ Bad: Async functions break MCP protocol
+async def get_gene_info_async(gene_id: str) -> Dict[str, Any]:  # DON'T DO THIS
+    return await fitness_loader.get_gene_info_async(gene_id)
+```
+
 ### Test Categories
 Use pytest markers for different test types:
 
@@ -346,6 +391,41 @@ gene_id = row[0]  # Get gene ID from first column
 - Log meaningful events for debugging
 - Handle edge cases in biological data gracefully
 - Provide clear error messages for common user mistakes
+
+---
+
+## GitHub Issue Workflow
+
+When working on GitHub issues, follow this systematic approach:
+
+1. **Create and checkout linked branch**: `git checkout -b issue-{number}-{short-description}`
+2. **Bring feature branch up to date with main**: Feature branches MUST always be brought up to date with main before completing work
+3. **Work on implementation** following all guidelines in this document
+4. **Test thoroughly** with comprehensive test suite
+5. **Run `make all` until all problems are fixed** - This is mandatory before completion
+6. **Commit and push** when complete
+7. **Create pull request** that auto-closes the issue when merged
+
+### Branch Naming Convention
+- Format: `issue-{number}-{short-description}`
+- Examples: `issue-21-metadata-registry`, `issue-22-data-redundancy`
+- Use kebab-case for descriptions
+- Keep descriptions concise but descriptive
+
+### Task Completion Requirements
+**ALWAYS run `make all` before considering any task complete.** This command runs the full validation pipeline:
+- Code formatting and linting
+- Type checking 
+- Comprehensive test suite
+- Coverage verification
+- Integration testing
+- MCP protocol validation
+
+**Repeat `make all` until zero errors remain.** Only then is a task ready for commit and push. This ensures:
+- No regressions introduced
+- All code quality standards met
+- Full functionality preserved
+- Ready for production deployment
 
 ---
 
