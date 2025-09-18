@@ -36,3 +36,7 @@ packages = ["src/fitness_mcp"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.deptry]
+# Allow imports from the current package
+known_first_party = ["fitness_mcp"]

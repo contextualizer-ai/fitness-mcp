@@ -221,10 +221,19 @@ $RECYCLE.BIN/
 .nfs*
 
 # Project-specific
-# Claude logs and demos
-claude-*.log
-*.claude.log
+# Logs directory
+logs/
 
 # MCP specific
 .mcp/
 mcp.log
+
+# Claude Code configuration and cache files
+.claude/
+**/.claude/
+.claude.json
+**/.claude.json
+
+# LibreOffice/Office lock files
+.~lock.*#
+**/.~lock.*#
