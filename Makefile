@@ -142,9 +142,7 @@ demo-atu3150-function: prompts/fitness-demo-prompt.txt ## Analyze what Atu3150 d
 	@echo "🧬 Analyzing Atu3150 gene function using fitness data..."
 	@echo "This demo shows how fitness analysis reveals Atu3150 is a lactose transporter"
 	claude \
-		--debug \
-		--verbose \
-		--mcp-config .mcp.json \
+		--mcp-config claude-mcp-config.json \
 		--dangerously-skip-permissions \
 		--print "$(shell cat prompts/fitness-demo-prompt.txt)" \
 		2>&1 | tee logs/atu3150-function-analysis.log
