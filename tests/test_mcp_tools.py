@@ -199,7 +199,7 @@ class TestMCPToolFunctions:
 
                 analysis = result["analysis"]
                 assert "conditions_where_gene_inhibits_growth" in analysis
-                assert "conditions_where_gene_benefits_growth" in analysis
+                assert "conditions_where_gene_is_essential" in analysis
                 assert "neutral_conditions" in analysis
                 assert "summary" in analysis
 
@@ -207,7 +207,7 @@ class TestMCPToolFunctions:
                 summary = analysis["summary"]
                 assert "total_conditions_tested" in summary
                 assert "inhibitory_count" in summary
-                assert "beneficial_count" in summary
+                assert "essential_count" in summary
                 assert "neutral_count" in summary
 
     def test_analyze_gene_fitness_error(self):
@@ -215,29 +215,6 @@ class TestMCPToolFunctions:
         result = analyze_gene_fitness("nonexistent_gene_123")
 
         assert "error" in result
-
-    def test_analyze_gene_fitness_with_filters(self):
-        """Test analyze_gene_fitness with min/max fitness filters."""
-        fitness_loader.load_data()
-
-        # Test with a known gene if available
-        if fitness_loader.genes:
-            gene_id = list(fitness_loader.genes.keys())[0]
-            result = analyze_gene_fitness(gene_id, min_fitness=0.0, max_fitness=1.0)
-
-            if "error" not in result:
-                analysis = result["analysis"]
-
-                # All conditions should have fitness in range [0.0, 1.0]
-                all_conditions = (
-                    analysis["conditions_where_gene_inhibits_growth"]
-                    + analysis["conditions_where_gene_benefits_growth"]
-                    + analysis["neutral_conditions"]
-                )
-
-                for condition in all_conditions:
-                    fitness_val = condition["fitness"]
-                    assert 0.0 <= fitness_val <= 1.0
 
     def test_get_gene_modules_success(self):
         """Test get_gene_modules with existing gene."""
@@ -307,6 +284,236 @@ class TestMCPToolFunctions:
 
 
 class TestComplexAnalysisFunctions:
+    """Test cases for complex analysis functions with realistic data."""
+
+    def setup_method(self):
+        """Set up realistic test data."""
+        self.genes_data = {
+            "Atu0001": {
+                "locusId": "Atu0001",
+                "sysName": "essential1",
+                "description": "Essential gene 1",
+                "fitness_values": [1.5, 1.2, 0.8, 0.1],  # High positive = essential
+            },
+            "Atu0002": {
+                "locusId": "Atu0002",
+                "sysName": "inhibitor1",
+                "description": "Growth inhibitor gene 1",
+                "fitness_values": [-1.0, -0.8, -0.2, 0.1],  # Negative = inhibits growth
+            },
+            "Atu0003": {
+                "locusId": "Atu0003",
+                "sysName": "neutral1",
+                "description": "Neutral gene 1",
+                "fitness_values": [0.1, -0.1, 0.05, -0.05],  # Near zero = neutral
+            },
+        }
+
+        self.conditions = ["stress1", "stress2", "carbon1", "control"]
+
+    def create_mock_fitness_response(self, gene_id, condition_filter=None):
+        """Create mock fitness response for a gene."""
+        gene_data = self.genes_data[gene_id]
+        fitness_data = []
+
+        for i, condition in enumerate(self.conditions):
+            if (
+                condition_filter is None
+                or condition_filter.lower() in condition.lower()
+            ):
+                if i < len(gene_data["fitness_values"]):
+                    fitness_data.append(
+                        {
+                            "condition": condition,
+                            "fitness": gene_data["fitness_values"][i],
+                            "description": f"Description for {condition}",
+                        }
+                    )
+
+        return {
+            "gene": {
+                "locusId": gene_data["locusId"],
+                "sysName": gene_data["sysName"],
+                "description": gene_data["description"],
+            },
+            "fitness_data": fitness_data,
+            "total_conditions": len(fitness_data),
+        }
+
+    def test_find_essential_genes_realistic(self):
+        """Test find_essential_genes with realistic data."""
+
+        def mock_get_gene_fitness(gene_id, condition_filter=None):
+            if gene_id in self.genes_data or gene_id in [
+                g["sysName"] for g in self.genes_data.values()
+            ]:
+                # Handle sysName lookup
+                if gene_id not in self.genes_data:
+                    gene_id = next(
+                        k for k, v in self.genes_data.items() if v["sysName"] == gene_id
+                    )
+                return self.create_mock_fitness_response(gene_id, condition_filter)
+            return {"error": "Gene not found"}
+
+        def mock_interpret_score(score):
+            if score is None:
+                return {"effect": "unknown", "interpretation": "No data"}
+            elif score >= 0.5:
+                return {
+                    "effect": "gene_benefits_growth",
+                    "interpretation": "Essential gene",
+                }
+            elif score <= -0.5:
+                return {
+                    "effect": "gene_inhibits_growth",
+                    "interpretation": "Growth inhibitor",
+                }
+            else:
+                return {"effect": "neutral", "interpretation": "Neutral effect"}
+
+        with (
+            patch.object(fitness_loader, "load_data"),
+            patch.object(fitness_loader, "genes", self.genes_data),
+            patch.object(
+                fitness_loader, "get_gene_fitness", side_effect=mock_get_gene_fitness
+            ),
+            patch.object(
+                fitness_loader,
+                "interpret_fitness_score",
+                side_effect=mock_interpret_score,
+            ),
+        ):
+            result = find_essential_genes(
+                condition_filter="stress", min_fitness_threshold=0.5, limit=10
+            )
+
+            assert isinstance(result, list)
+            # Should find Atu0001 as essential (high positive fitness scores)
+            if result:
+                assert any(gene["gene"]["locusId"] == "Atu0001" for gene in result)
+                for gene in result:
+                    assert "essential_in_conditions" in gene
+                    assert gene["num_essential_conditions"] > 0
+
+    def test_find_growth_inhibitor_genes_realistic(self):
+        """Test find_growth_inhibitor_genes with realistic data."""
+
+        def mock_get_gene_fitness(gene_id, condition_filter=None):
+            if gene_id in self.genes_data or gene_id in [
+                g["sysName"] for g in self.genes_data.values()
+            ]:
+                if gene_id not in self.genes_data:
+                    gene_id = next(
+                        k for k, v in self.genes_data.items() if v["sysName"] == gene_id
+                    )
+                return self.create_mock_fitness_response(gene_id, condition_filter)
+            return {"error": "Gene not found"}
+
+        def mock_interpret_score(score):
+            if score is None:
+                return {"effect": "unknown", "interpretation": "No data"}
+            elif score >= 0.5:
+                return {
+                    "effect": "gene_benefits_growth",
+                    "interpretation": "Essential gene",
+                }
+            elif score <= -0.5:
+                return {
+                    "effect": "gene_inhibits_growth",
+                    "interpretation": "Growth inhibitor",
+                }
+            else:
+                return {"effect": "neutral", "interpretation": "Neutral effect"}
+
+        with (
+            patch.object(fitness_loader, "load_data"),
+            patch.object(fitness_loader, "genes", self.genes_data),
+            patch.object(
+                fitness_loader, "get_gene_fitness", side_effect=mock_get_gene_fitness
+            ),
+            patch.object(
+                fitness_loader,
+                "interpret_fitness_score",
+                side_effect=mock_interpret_score,
+            ),
+        ):
+            result = find_growth_inhibitor_genes(
+                condition_filter="stress", max_fitness_threshold=-0.5, limit=10
+            )
+
+            assert isinstance(result, list)
+            # Should find Atu0002 as growth inhibitor (negative fitness scores)
+            if result:
+                assert any(gene["gene"]["locusId"] == "Atu0002" for gene in result)
+                for gene in result:
+                    assert "inhibits_growth_in_conditions" in gene
+                    assert gene["num_inhibitory_conditions"] > 0
+
+    def test_analyze_gene_fitness_categorization(self):
+        """Test analyze_gene_fitness correctly categorizes fitness effects."""
+        mock_fitness_data = {
+            "gene": {
+                "locusId": "Atu0001",
+                "sysName": "test_gene",
+                "description": "Test gene",
+            },
+            "fitness_data": [
+                {
+                    "condition": "beneficial_cond",
+                    "fitness": 0.8,
+                },  # Positive: gene inhibits growth when present
+                {
+                    "condition": "inhibitory_cond",
+                    "fitness": -0.8,
+                },  # Negative: gene is essential for growth
+                {"condition": "neutral_cond", "fitness": 0.1},  # Neutral
+                {"condition": "no_data_cond", "fitness": None},  # No data
+            ],
+        }
+
+        with patch.object(fitness_loader, "get_gene_fitness") as mock_get:
+            mock_get.return_value = mock_fitness_data
+
+            result = analyze_gene_fitness("Atu0001")
+
+            analysis = result["analysis"]
+
+            # Should categorize correctly
+            assert len(analysis["conditions_where_gene_is_essential"]) == 1
+            assert len(analysis["conditions_where_gene_inhibits_growth"]) == 1
+            assert len(analysis["neutral_conditions"]) == 1
+
+            # Check summary counts
+            summary = analysis["summary"]
+            assert summary["essential_count"] == 1
+            assert summary["inhibitory_count"] == 1
+            assert summary["neutral_count"] == 1
+            assert summary["total_conditions_tested"] == 3  # Excludes None values
+
+    def test_analyze_gene_fitness_with_filters(self):
+        """Test analyze_gene_fitness with min/max fitness filters."""
+        fitness_loader.load_data()
+
+        # Test with a known gene if available
+        if fitness_loader.genes:
+            gene_id = list(fitness_loader.genes.keys())[0]
+            result = analyze_gene_fitness(gene_id, min_fitness=0.0, max_fitness=1.0)
+
+            if "error" not in result:
+                analysis = result["analysis"]
+
+                # Should only include conditions with fitness in range [0.0, 1.0]
+                all_conditions = (
+                    analysis["conditions_where_gene_is_essential"]
+                    + analysis["conditions_where_gene_inhibits_growth"]
+                    + analysis["neutral_conditions"]
+                )
+
+                for condition in all_conditions:
+                    fitness_val = condition["fitness"]
+                    assert 0.0 <= fitness_val <= 1.0
+
+class TestComplexAnalysisFunctions:
     """Test cases for complex analysis functions with realistic scenarios."""
 
     def test_find_essential_genes_with_filter(self):
@@ -359,20 +566,20 @@ class TestComplexAnalysisFunctions:
 
                 # Check that categorization logic is working
                 inhibitory = analysis["conditions_where_gene_inhibits_growth"]
-                beneficial = analysis["conditions_where_gene_benefits_growth"]
+                essential = analysis["conditions_where_gene_is_essential"]
                 neutral = analysis["neutral_conditions"]
 
                 # All should be lists
                 assert isinstance(inhibitory, list)
-                assert isinstance(beneficial, list)
+                assert isinstance(essential, list)
                 assert isinstance(neutral, list)
 
                 # Check fitness value ranges if conditions exist
                 for condition in inhibitory:
-                    assert condition["fitness"] < -0.5
+                    assert condition["fitness"] > 0.5  # Positive = gene inhibits growth
 
-                for condition in beneficial:
-                    assert condition["fitness"] > 0.5
+                for condition in essential:
+                    assert condition["fitness"] < -0.5  # Negative = gene is essential
 
                 for condition in neutral:
                     assert -0.5 <= condition["fitness"] <= 0.5

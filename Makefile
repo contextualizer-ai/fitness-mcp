@@ -1,7 +1,7 @@
-.PHONY: test-coverage clean install dev format lint all server build upload-test upload release deptry mypy test-fitness-protocol test-gene-analysis test-integration test-version test-gene-fitness test-biological-analysis demo-claude-code test-claude-mcp
+.PHONY: test-coverage clean install dev format lint all server build upload-test upload release deptry mypy test-fitness-protocol test-gene-analysis test-integration test-version test-gene-fitness test-claude-mcp
 
-# Default target - ordered workflow: format -> lint -> typecheck -> deps -> tests -> jsonrpc -> build
-all: clean install dev format lint mypy deptry test-coverage test-fitness-protocol test-gene-analysis test-integration test-version build
+# Default target
+all: clean install dev test-coverage format lint mypy deptry build test-fitness-protocol test-gene-analysis test-integration test-version
 
 # Install everything for development
 dev:
@@ -25,6 +25,7 @@ clean:
 	find . -type d -name __pycache__ -exec rm -rf {} +
 	find . -type f -name "*.pyc" -delete
 	rm -rf src/*.egg-info
+	rm -rf logs/
 
 # Run server mode
 server:
@@ -104,11 +105,11 @@ test-fitness-protocol:
 	 sleep 0.1; \
 	 echo '{"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}}'; \
 	 sleep 0.1; \
-	 echo '{"jsonrpc": "2.0", "method": "tools/list", "id": 2}') | \
+	 echo '{"jsonrpc": "2.0", "method": "tools/call", "params": {"name": "get_gene_info", "arguments": {"gene_id": "Atu3150"}}, "id": 2}') | \
 	if [ -n "$$TIMEOUT_CMD" ]; then $$TIMEOUT_CMD 5 uv run fitness-mcp; else uv run fitness-mcp & PID=$$!; sleep 5; kill $$PID 2>/dev/null || true; fi
 
 test-gene-analysis:
-	@echo "Testing fitness MCP with gene analysis capabilities..."
+	@echo "Testing gene fitness analysis via MCP..."
 	@if command -v timeout >/dev/null 2>&1; then \
 		TIMEOUT_CMD="timeout"; \
 	elif command -v gtimeout >/dev/null 2>&1; then \
@@ -121,9 +122,9 @@ test-gene-analysis:
 	 sleep 0.1; \
 	 echo '{"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}}'; \
 	 sleep 0.1; \
-	 echo '{"jsonrpc": "2.0", "method": "tools/call", "params": {"name": "search_genes", "arguments": {"query": "ribosome", "limit": 3}}, "id": 3}'; \
+	 echo '{"jsonrpc": "2.0", "method": "tools/call", "params": {"name": "search_genes", "arguments": {"query": "ribosome", "limit": 2}}, "id": 3}'; \
 	 sleep 0.1; \
-	 echo '{"jsonrpc": "2.0", "method": "tools/call", "params": {"name": "find_essential_genes", "arguments": {"condition_filter": "pH", "min_fitness_threshold": 0.5, "limit": 2}}, "id": 4}') | \
+	 echo '{"jsonrpc": "2.0", "method": "tools/call", "params": {"name": "find_essential_genes", "arguments": {"condition_filter": "pH", "min_fitness_threshold": 1.0, "limit": 1}}, "id": 4}') | \
 	if [ -n "$$TIMEOUT_CMD" ]; then $$TIMEOUT_CMD 10 uv run fitness-mcp; else uv run fitness-mcp & PID=$$!; sleep 10; kill $$PID 2>/dev/null || true; fi
 
 # Test version flag
@@ -143,8 +144,8 @@ test-performance:
 	@time uv run python -c "from fitness_mcp.main import fitness_loader, search_genes; fitness_loader.load_data(); print('Data loaded'); results = search_genes('ribosome', 10); print(f'Found {len(results)} genes')"
 
 # Directory creation targets (not .PHONY since they create directories)
-data/outputs:
-	@echo "Creating outputs directory..."
+logs:
+	@echo "Creating logs directory..."
 	@mkdir -p $@
 
 prompts:
@@ -160,19 +161,33 @@ test-claude-mcp:
 		--mcp-config .mcp.json \
 		--dangerously-skip-permissions \
 		--print "Test the fitness-mcp by listing available tools and then search for genes containing 'ribosome' and return the top 3 results" \
-		2>&1 | tee claude-mcp-test.log
+		2>&1 | tee logs/claude-mcp-test.log
 
-# Simple Claude demo with prompt file
-demo-claude-code: prompts/fitness-demo-prompt.txt ## Run Claude Code fitness analysis demo  
-	@echo "🧬 Running Claude Code fitness analysis demo..."
+# Analyze specific gene function using fitness data (Atu3150 lactose transporter example)
+demo-atu3150-function: prompts/fitness-demo-prompt.txt ## Analyze what Atu3150 does using fitness data
+	@echo "🧬 Analyzing Atu3150 gene function using fitness data..."
+	@echo "This demo shows how fitness analysis reveals Atu3150 is a lactose transporter"
 	claude \
 		--debug \
 		--verbose \
 		--mcp-config .mcp.json \
 		--dangerously-skip-permissions \
 		--print "$(shell cat prompts/fitness-demo-prompt.txt)" \
-		2>&1 | tee claude-fitness-demo.log
-	@echo "✅ Check claude-fitness-demo.log for results"
+		2>&1 | tee logs/atu3150-function-analysis.log
+	@echo "✅ Check logs/atu3150-function-analysis.log for biological insights"
+
+
+# Show all available Claude Code demos
+demo-help: ## Show all available Claude Code demo options
+	@echo "🧬 FITNESS-MCP CLAUDE CODE DEMO"
+	@echo "==============================="
+	@echo ""
+	@echo "📊 Available demo target:"
+	@echo "  make demo-atu3150-function   - Analyze Atu3150 gene function using fitness data"
+	@echo ""
+	@echo "🎯 Demo creates a log file in logs/ with results for analysis"
+	@echo "💡 Shows how to infer gene function from fitness patterns!"
+
 
 # FITNESS MCP - Claude Desktop config:
 #   Add to ~/Library/Application Support/Claude/claude_desktop_config.json:

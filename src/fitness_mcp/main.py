@@ -13,6 +13,7 @@ import csv
 import os
 from typing import Any, Dict, List, Optional
 from fastmcp import FastMCP
+from fitness_mcp.data_processing import generate_significant_fitness_pairs
 
 
 # DATA LOADING SECTION
@@ -605,6 +606,10 @@ class PairsDataLoader:
             if not self._needs_reload():
                 return
 
+            # Generate pairs file if it doesn't exist
+            if not os.path.exists(self.data_file):
+                self._generate_pairs_file()
+
             if not os.path.exists(self.data_file):
                 raise FileNotFoundError(f"Pairs data file not found: {self.data_file}")
 
@@ -636,6 +641,30 @@ class PairsDataLoader:
 
             self.loaded = True
             self._mtime = os.path.getmtime(self.data_file)
+
+    def _generate_pairs_file(self) -> None:
+        """Generate the pairs file from the main fitness data if it doesn't exist."""
+        # Extract threshold from filename (e.g., "fit_t_pairs_threshold_2_long.tab")
+        filename = os.path.basename(self.data_file)
+        if "threshold_" in filename:
+            threshold_str = filename.split("threshold_")[1].split("_")[0]
+            try:
+                threshold = float(threshold_str)
+            except ValueError:
+                threshold = 2.0  # Default threshold
+        else:
+            threshold = 2.0
+
+        # Source fitness data file
+        fitness_file = os.path.join(os.path.dirname(self.data_file), "fit_t.tab")
+
+        if os.path.exists(fitness_file):
+            print(f"Generating pairs file with threshold {threshold}...")
+            generate_significant_fitness_pairs(fitness_file, self.data_file, threshold)
+        else:
+            raise FileNotFoundError(
+                f"Source fitness data file not found: {fitness_file}"
+            )
 
     def get_conditions_for_gene(self, gene_id: str) -> List[Dict[str, Any]]:
         """Get all conditions where a gene has significant fitness values (|value| > 2).
@@ -706,13 +735,13 @@ def get_gene_fitness(
     return fitness_loader.get_gene_fitness(gene_id, condition_filter)
 
 
-def search_genes(query: str, limit: int = 10) -> List[Dict[str, Any]]:
+def search_genes(query: str, limit: int = 3) -> List[Dict[str, Any]]:
     """
     Search for genes by name or description.
 
     Args:
         query: Search term to match against gene names or descriptions
-        limit: Maximum number of results to return (default: 10)
+        limit: Maximum number of results to return (default: 3)
 
     Returns:
         List of dictionaries containing matching gene information
@@ -765,7 +794,7 @@ def interpret_fitness_score(fitness_score: float) -> Dict[str, Any]:
 def find_essential_genes(
     condition_filter: Optional[str] = None,
     min_fitness_threshold: float = 0.5,
-    limit: int = 20,
+    limit: int = 5,
 ) -> List[Dict[str, Any]]:
     """
     Find genes that appear essential (high positive fitness scores when knocked out).
@@ -811,6 +840,10 @@ def find_essential_genes(
                     }
                 )
 
+        # Sort by fitness score and limit conditions per gene
+        essential_conditions.sort(key=lambda x: x["fitness_score"], reverse=True)
+        essential_conditions = essential_conditions[:3]  # Max 3 conditions per gene
+
         if essential_conditions:
             essential_genes.append(
                 {
@@ -831,7 +864,7 @@ def find_essential_genes(
 def find_growth_inhibitor_genes(
     condition_filter: Optional[str] = None,
     max_fitness_threshold: float = -0.5,
-    limit: int = 20,
+    limit: int = 5,
 ) -> List[Dict[str, Any]]:
     """
     Find genes that inhibit growth (negative fitness scores when knocked out).
@@ -877,6 +910,10 @@ def find_growth_inhibitor_genes(
                     }
                 )
 
+        # Sort by fitness score and limit conditions per gene
+        inhibitor_conditions.sort(key=lambda x: x["fitness_score"])
+        inhibitor_conditions = inhibitor_conditions[:3]  # Max 3 conditions per gene
+
         if inhibitor_conditions:
             inhibitor_genes.append(
                 {
@@ -898,29 +935,31 @@ def analyze_gene_fitness(
     gene_id: str,
     min_fitness: Optional[float] = None,
     max_fitness: Optional[float] = None,
+    limit: Optional[int] = 10,
 ) -> Dict[str, Any]:
     """
     Analyze fitness effects for a gene knockout mutant across conditions.
 
     Args:
         gene_id: Gene locus ID or system name
-        min_fitness: Minimum fitness value to include (use negative values to find where gene inhibits growth)
-        max_fitness: Maximum fitness value to include (use positive values to find where gene benefits growth)
+        min_fitness: Minimum fitness value to include (use negative values to find essential genes)
+        max_fitness: Maximum fitness value to include (use positive values to find growth-inhibiting genes)
+        limit: Maximum number of conditions to return per category (default: 10, sorted by absolute fitness)
 
     Returns:
         Dict with gene info and categorized fitness data. Categories indicate:
-        - conditions_where_gene_inhibits_growth: Negative fitness scores
-        - conditions_where_gene_benefits_growth: Positive fitness scores
-        - neutral_conditions: Fitness scores near zero
+        - conditions_where_gene_is_essential: Negative fitness scores (gene knockout reduces fitness, gene is ESSENTIAL)
+        - conditions_where_gene_inhibits_growth: Positive fitness scores (gene knockout improves fitness, gene INHIBITS growth)
+        - neutral_conditions: Fitness scores near zero (gene knockout has minimal effect)
     """
     fitness_data = fitness_loader.get_gene_fitness(gene_id)
 
     if "error" in fitness_data:
         return fitness_data
 
-    # Categorize conditions by fitness effect (corrected interpretation)
-    gene_inhibits_growth = []  # Negative fitness: gene knockout improves fitness
-    gene_benefits_growth = []  # Positive fitness: gene knockout reduces fitness
+    # Categorize conditions by fitness effect
+    essential_conditions = []  # Negative fitness: gene knockout reduces fitness (gene is ESSENTIAL)
+    inhibitory_conditions = []  # Positive fitness: gene knockout improves fitness (gene INHIBITS growth)
     neutral = []  # Near-zero fitness: gene knockout has minimal effect
 
     for item in fitness_data["fitness_data"]:
@@ -936,20 +975,36 @@ def analyze_gene_fitness(
 
         if (
             fitness_val < -0.5
-        ):  # Gene knockout improves fitness (gene normally inhibits growth)
-            gene_inhibits_growth.append(item)
+        ):  # Gene knockout reduces fitness (gene is ESSENTIAL for this condition)
+            essential_conditions.append(item)
         elif (
             fitness_val > 0.5
-        ):  # Gene knockout reduces fitness (gene is beneficial/essential)
-            gene_benefits_growth.append(item)
+        ):  # Gene knockout improves fitness (gene INHIBITS growth in this condition)
+            inhibitory_conditions.append(item)
         else:  # Neutral effect
             neutral.append(item)
+
+    # Sort each category by fitness value and apply limit
+    # Sort essential_conditions by most negative first (strongest essential effect)
+    essential_conditions.sort(key=lambda x: x["fitness"])
+    if limit:
+        essential_conditions = essential_conditions[:limit]
+
+    # Sort inhibitory_conditions by most positive first (strongest inhibitory effect)
+    inhibitory_conditions.sort(key=lambda x: x["fitness"], reverse=True)
+    if limit:
+        inhibitory_conditions = inhibitory_conditions[:limit]
+
+    # Sort neutral by absolute value (closest to zero first)
+    neutral.sort(key=lambda x: abs(x["fitness"]))
+    if limit:
+        neutral = neutral[:limit]
 
     return {
         "gene": fitness_data["gene"],
         "analysis": {
-            "conditions_where_gene_inhibits_growth": gene_inhibits_growth,
-            "conditions_where_gene_benefits_growth": gene_benefits_growth,
+            "conditions_where_gene_is_essential": essential_conditions,
+            "conditions_where_gene_inhibits_growth": inhibitory_conditions,
             "neutral_conditions": neutral,
             "summary": {
                 "total_conditions_tested": len(
@@ -959,9 +1014,10 @@ def analyze_gene_fitness(
                         if x["fitness"] is not None
                     ]
                 ),
-                "inhibitory_count": len(gene_inhibits_growth),
-                "beneficial_count": len(gene_benefits_growth),
+                "essential_count": len(essential_conditions),
+                "inhibitory_count": len(inhibitory_conditions),
                 "neutral_count": len(neutral),
+                "limit_applied": limit,
             },
         },
     }
@@ -998,13 +1054,13 @@ def get_module_genes(module_id: int) -> Dict[str, Any]:
     return module_loader.get_genes_in_module(module_id)
 
 
-def search_modules(query: str, limit: int = 10) -> List[Dict[str, Any]]:
+def search_modules(query: str, limit: int = 3) -> List[Dict[str, Any]]:
     """
     Search for modules by name or category.
 
     Args:
         query: Search term to match against module names or categories
-        limit: Maximum number of results to return (default: 10)
+        limit: Maximum number of results to return (default: 3)
 
     Returns:
         List of matching modules with their genes
