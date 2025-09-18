@@ -24,10 +24,10 @@ from src.fitness_mcp.main import (
     get_module_genes,
     search_modules,
     get_all_modules,
-    # Pairs/network tools
-    get_conditions_for_gene,
-    get_genes_for_condition,
-    expand_gene_condition_network,
+    # Pairs/network tools (renamed for consistency)
+    get_fitness_effects_for_gene,
+    get_genes_with_fitness_effects,
+    expand_fitness_network,
     # Data loaders for setup
     fitness_loader,
     # module_loader and pairs_loader removed - functionality replaced by MetadataRegistry
@@ -52,9 +52,11 @@ class TestAPIContracts:
             if "error" not in result:
                 # Success contract
                 assert isinstance(result, dict)
+                assert "data" in result
+                data = result["data"]
                 required_keys = {"locusId", "sysName", "description"}
-                assert set(result.keys()) == required_keys
-                assert all(isinstance(result[key], str) for key in required_keys)
+                assert set(data.keys()) == required_keys
+                assert all(isinstance(data[key], str) for key in required_keys)
 
     def test_get_gene_fitness_contract(self):
         """Test get_gene_fitness API contract."""
@@ -95,9 +97,12 @@ class TestAPIContracts:
         """Test search_genes API contract."""
         result = search_genes("test_query", 5)
 
-        assert isinstance(result, list)
-        if result:
-            gene = result[0]
+        assert isinstance(result, dict)
+        assert "data" in result
+        data = result["data"]
+        assert "genes" in data
+        if data["genes"]:
+            gene = data["genes"][0]
             assert isinstance(gene, dict)
             required_keys = {"locusId", "sysName", "description"}
             assert required_keys.issubset(set(gene.keys()))
@@ -106,15 +111,23 @@ class TestAPIContracts:
         """Test get_growth_conditions API contract."""
         # Without filter
         result = get_growth_conditions()
-        assert isinstance(result, list)
-        if result:
-            assert all(isinstance(condition, str) for condition in result)
+        # Check standardized response structure
+        assert isinstance(result, dict)
+        assert "data" in result
+        data = result["data"]
+        assert "conditions" in data
+        if data["conditions"]:
+            assert all(isinstance(condition, str) for condition in data["conditions"])
 
         # With filter
         result = get_growth_conditions("pH")
-        assert isinstance(result, list)
-        if result:
-            assert all(isinstance(condition, str) for condition in result)
+        # Check standardized response structure
+        assert isinstance(result, dict)
+        assert "data" in result
+        data = result["data"]
+        assert "conditions" in data
+        if data["conditions"]:
+            assert all(isinstance(condition, str) for condition in data["conditions"])
 
     def test_get_condition_details_contract(self):
         """Test get_condition_details API contract."""
@@ -136,28 +149,36 @@ class TestAPIContracts:
     def test_interpret_fitness_score_contract(self):
         """Test interpret_fitness_score API contract."""
         # Test with various score types
-        test_scores = [0.8, -0.8, 0.05, None]
+        test_scores = [0.8, -0.8, 0.05]
 
         for score in test_scores:
             result = interpret_fitness_score(score)
             assert isinstance(result, dict)
+            assert "data" in result
+            data = result["data"]
 
             required_keys = {"interpretation", "effect", "magnitude"}
-            assert required_keys.issubset(set(result.keys()))
-            assert all(isinstance(result[key], str) for key in required_keys)
+            assert required_keys.issubset(set(data.keys()))
+            assert all(isinstance(data[key], str) for key in required_keys)
 
-            # Score should be included unless it was None
-            if score is not None:
-                assert "score" in result
-                assert result["score"] == score
+            # Score should be included
+            assert "score" in data
+            assert data["score"] == score
+
+        # Test None score (should return error)
+        result = interpret_fitness_score(None)
+        assert "error" in result
 
     def test_find_essential_genes_contract(self):
         """Test find_essential_genes API contract."""
         result = find_essential_genes(limit=2)
 
-        assert isinstance(result, list)
-        if result:
-            gene_entry = result[0]
+        assert isinstance(result, dict)
+        assert "data" in result
+        data = result["data"]
+        assert "essential_genes" in data
+        if data["essential_genes"]:
+            gene_entry = data["essential_genes"][0]
             assert isinstance(gene_entry, dict)
 
             required_keys = {
@@ -182,9 +203,12 @@ class TestAPIContracts:
         """Test find_growth_inhibitor_genes API contract."""
         result = find_growth_inhibitor_genes(limit=2)
 
-        assert isinstance(result, list)
-        if result:
-            gene_entry = result[0]
+        assert isinstance(result, dict)
+        assert "data" in result
+        data = result["data"]
+        assert "inhibitory_genes" in data
+        if data["inhibitory_genes"]:
+            gene_entry = data["inhibitory_genes"][0]
             assert isinstance(gene_entry, dict)
 
             required_keys = {
@@ -269,12 +293,14 @@ class TestAPIContracts:
 
         assert "error" not in result, f"Should find modules for gene {gene_id}"
         assert isinstance(result, dict)
+        assert "data" in result
+        data = result["data"]
         required_keys = {"gene_id", "modules", "module_count"}
-        assert set(result.keys()) == required_keys
+        assert set(data.keys()) == required_keys
 
-        assert result["gene_id"] == gene_id
-        assert isinstance(result["modules"], list)
-        assert isinstance(result["module_count"], int)
+        assert data["gene_id"] == gene_id
+        assert isinstance(data["modules"], list)
+        assert isinstance(data["module_count"], int)
 
     def test_get_module_genes_contract(self, loaded_metadata_registry):
         """Test get_module_genes API contract."""
@@ -287,20 +313,25 @@ class TestAPIContracts:
 
         assert "error" not in result, f"Should find genes for module {module_id}"
         assert isinstance(result, dict)
+        assert "data" in result
+        data = result["data"]
         required_keys = {"module", "genes", "gene_count"}
-        assert set(result.keys()) == required_keys
+        assert set(data.keys()) == required_keys
 
-        assert isinstance(result["module"], dict)
-        assert isinstance(result["genes"], list)
-        assert isinstance(result["gene_count"], int)
+        assert isinstance(data["module"], dict)
+        assert isinstance(data["genes"], list)
+        assert isinstance(data["gene_count"], int)
 
     def test_search_modules_contract(self):
         """Test search_modules API contract."""
         result = search_modules("transport", 5)
 
-        assert isinstance(result, list)
-        if result:
-            module_entry = result[0]
+        assert isinstance(result, dict)
+        assert "data" in result
+        data = result["data"]
+        assert "modules" in data
+        if data["modules"]:
+            module_entry = data["modules"][0]
             assert isinstance(module_entry, dict)
             required_keys = {"module", "genes", "gene_count"}
             assert set(module_entry.keys()) == required_keys
@@ -309,17 +340,20 @@ class TestAPIContracts:
         """Test get_all_modules API contract."""
         result = get_all_modules()
 
-        assert isinstance(result, list)
-        if result:
-            module = result[0]
+        assert isinstance(result, dict)
+        assert "data" in result
+        data = result["data"]
+        assert "modules" in data
+        if data["modules"]:
+            module = data["modules"][0]
             assert isinstance(module, dict)
             required_keys = {"module_id", "name", "category", "count"}
             assert set(module.keys()) == required_keys
 
-    def test_get_conditions_for_gene_contract(self, loaded_metadata_registry):
-        """Test get_conditions_for_gene API contract."""
+    def test_get_fitness_effects_for_gene_contract(self, loaded_metadata_registry):
+        """Test get_fitness_effects_for_gene API contract."""
         # Test with nonexistent gene
-        result = get_conditions_for_gene("nonexistent_gene_123")
+        result = get_fitness_effects_for_gene("nonexistent_gene_123")
         assert isinstance(result, dict)
         assert "error" in result
 
@@ -328,27 +362,28 @@ class TestAPIContracts:
             "gene_to_conditions should have data"
         )
         gene_id = list(loaded_metadata_registry.gene_to_conditions.keys())[0]
-        result = get_conditions_for_gene(gene_id)
+        result = get_fitness_effects_for_gene(gene_id)
 
-        assert "error" not in result, f"Should find conditions for gene {gene_id}"
+        assert "error" not in result, f"Should find fitness effects for gene {gene_id}"
         assert isinstance(result, dict)
-        required_keys = {
-            "gene_id",
-            "conditions",
-            "total_conditions",
-            "interpretation",
-        }
+        # New standardized response format
+        required_keys = {"data", "metadata", "suggestions"}
         assert set(result.keys()) == required_keys
 
-        assert result["gene_id"] == gene_id
-        assert isinstance(result["conditions"], list)
-        assert isinstance(result["total_conditions"], int)
-        assert isinstance(result["interpretation"], str)
+        # Check data section
+        data = result["data"]
+        data_keys = {"gene_id", "fitness_effects", "total_effects"}
+        assert set(data.keys()) == data_keys
 
-    def test_get_genes_for_condition_contract(self, loaded_metadata_registry):
-        """Test get_genes_for_condition API contract."""
+        assert data["gene_id"] == gene_id
+        assert isinstance(data["fitness_effects"], list)
+        assert isinstance(data["total_effects"], int)
+        assert isinstance(result["metadata"]["interpretation"], str)
+
+    def test_get_genes_with_fitness_effects_contract(self, loaded_metadata_registry):
+        """Test get_genes_with_fitness_effects API contract."""
         # Test with nonexistent condition
-        result = get_genes_for_condition("nonexistent_condition_123")
+        result = get_genes_with_fitness_effects("nonexistent_condition_123")
         assert isinstance(result, dict)
         assert "error" in result
 
@@ -357,27 +392,28 @@ class TestAPIContracts:
             "condition_to_genes should have data"
         )
         condition_id = list(loaded_metadata_registry.condition_to_genes.keys())[0]
-        result = get_genes_for_condition(condition_id)
+        result = get_genes_with_fitness_effects(condition_id)
 
         assert "error" not in result, f"Should find genes for condition {condition_id}"
         assert isinstance(result, dict)
-        required_keys = {
-            "condition_id",
-            "genes",
-            "total_genes",
-            "interpretation",
-        }
+        # New standardized response format
+        required_keys = {"data", "metadata", "suggestions"}
         assert set(result.keys()) == required_keys
 
-        assert result["condition_id"] == condition_id
-        assert isinstance(result["genes"], list)
-        assert isinstance(result["total_genes"], int)
-        assert isinstance(result["interpretation"], str)
+        # Check data section
+        data = result["data"]
+        data_keys = {"condition_id", "fitness_effects", "total_genes"}
+        assert set(data.keys()) == data_keys
 
-    def test_expand_gene_condition_network_contract(self, loaded_metadata_registry):
-        """Test expand_gene_condition_network API contract."""
+        assert data["condition_id"] == condition_id
+        assert isinstance(data["fitness_effects"], list)
+        assert isinstance(data["total_genes"], int)
+        assert isinstance(result["metadata"]["interpretation"], str)
+
+    def test_expand_fitness_network_contract(self, loaded_metadata_registry):
+        """Test expand_fitness_network API contract."""
         # Test with nonexistent pair
-        result = expand_gene_condition_network("gene123", "condition123")
+        result = expand_fitness_network("gene123", "condition123")
         assert isinstance(result, dict)
         assert "error" in result
 
@@ -392,7 +428,7 @@ class TestAPIContracts:
             f"Gene {gene_id} should have conditions in loaded data"
         )
         condition_id = conditions[0]  # metadata_registry stores condition IDs directly
-        result = expand_gene_condition_network(gene_id, condition_id)
+        result = expand_fitness_network(gene_id, condition_id)
 
         assert "error" not in result, (
             f"Should expand network for {gene_id}-{condition_id}"
@@ -461,9 +497,9 @@ class TestMCPToolInventory:
             "get_module_genes",
             "search_modules",
             "get_all_modules",
-            "get_conditions_for_gene",
-            "get_genes_for_condition",
-            "expand_gene_condition_network",
+            "get_fitness_effects_for_gene",
+            "get_genes_with_fitness_effects",
+            "expand_fitness_network",
         }
 
         # Extract test method names from this file
@@ -498,9 +534,9 @@ class TestMCPToolInventory:
             get_module_genes,
             search_modules,
             get_all_modules,
-            get_conditions_for_gene,
-            get_genes_for_condition,
-            expand_gene_condition_network,
+            get_fitness_effects_for_gene,
+            get_genes_with_fitness_effects,
+            expand_fitness_network,
         ]
 
         for func in tool_functions:

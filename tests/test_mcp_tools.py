@@ -33,12 +33,15 @@ class TestMCPToolFunctions:
             result = get_gene_info(gene_id)
 
             if "error" not in result:
-                assert "locusId" in result
-                assert "sysName" in result
-                assert "description" in result
-                assert isinstance(result["locusId"], str)
-                assert isinstance(result["sysName"], str)
-                assert isinstance(result["description"], str)
+                # Check standardized response structure
+                assert "data" in result
+                data = result["data"]
+                assert "locusId" in data
+                assert "sysName" in data
+                assert "description" in data
+                assert isinstance(data["locusId"], str)
+                assert isinstance(data["sysName"], str)
+                assert isinstance(data["description"], str)
 
     def test_get_gene_info_not_found(self):
         """Test get_gene_info with non-existent gene."""
@@ -80,9 +83,13 @@ class TestMCPToolFunctions:
         # Use a common term likely to find results
         result = search_genes("ribosom", 5)
 
-        assert isinstance(result, list)
-        if result:
-            gene = result[0]
+        # Check standardized response structure
+        assert isinstance(result, dict)
+        assert "data" in result
+        data = result["data"]
+        assert "genes" in data
+        if data["genes"]:
+            gene = data["genes"][0]
             assert "locusId" in gene
             assert "sysName" in gene
             assert "description" in gene
@@ -92,18 +99,26 @@ class TestMCPToolFunctions:
         # Data is already loaded via fixture
         result = get_growth_conditions()
 
-        assert isinstance(result, list)
-        if result:
-            assert isinstance(result[0], str)
+        # Check standardized response structure
+        assert isinstance(result, dict)
+        assert "data" in result
+        data = result["data"]
+        assert "conditions" in data
+        if data["conditions"]:
+            assert isinstance(data["conditions"][0], str)
 
     def test_get_growth_conditions_with_filter(self, loaded_metadata_registry):
         """Test get_growth_conditions with filter."""
         # Data is already loaded via fixture
         result = get_growth_conditions("pH")
 
-        assert isinstance(result, list)
+        # Check standardized response structure
+        assert isinstance(result, dict)
+        assert "data" in result
+        data = result["data"]
+        assert "conditions" in data
         # All returned conditions should contain the filter term
-        for condition in result:
+        for condition in data["conditions"]:
             assert "pH" in condition or "ph" in condition.lower()
 
     def test_get_condition_details(self, loaded_metadata_registry):
@@ -115,42 +130,53 @@ class TestMCPToolFunctions:
             result = get_condition_details(condition_name)
 
             if "error" not in result:
-                assert "condition_name" in result
-                assert result["condition_name"] == condition_name
+                # Check standardized response structure
+                assert "data" in result
+                data = result["data"]
+                assert "condition_info" in data
+                assert data["condition_info"]["condition_name"] == condition_name
 
     def test_interpret_fitness_score(self):
         """Test interpret_fitness_score function."""
         # Test positive score (gene inhibits growth - knockout improves fitness)
         result = interpret_fitness_score(0.8)
 
-        assert "interpretation" in result
-        assert "effect" in result
-        assert "magnitude" in result
-        assert "score" in result
-        assert result["score"] == 0.8
-        assert result["effect"] == "gene_inhibits_growth"
+        # Check standardized response structure
+        assert "data" in result
+        data = result["data"]
+        assert "interpretation" in data
+        assert "effect" in data
+        assert "magnitude" in data
+        assert "score" in data
+        assert data["score"] == 0.8
+        assert data["effect"] == "gene_inhibits_growth"
 
         # Test negative score (gene benefits growth - knockout reduces fitness)
         result = interpret_fitness_score(-0.8)
-        assert result["effect"] == "gene_benefits_growth"
+        assert result["data"]["effect"] == "gene_benefits_growth"
 
         # Test neutral score
         result = interpret_fitness_score(0.05)
-        assert result["effect"] == "neutral"
+        assert result["data"]["effect"] == "neutral"
 
         # Test None score
         result = interpret_fitness_score(None)
-        assert result["effect"] == "unknown"
+        # This should return an error for None input
+        assert "error" in result
 
     def test_find_essential_genes(self, loaded_metadata_registry):
         """Test find_essential_genes function."""
         # Data is already loaded via fixture
         result = find_essential_genes(limit=2)
 
-        assert isinstance(result, list)
+        # Check standardized response structure
+        assert isinstance(result, dict)
+        assert "data" in result
+        data = result["data"]
+        assert "essential_genes" in data
         # Result could be empty if no essential genes found with default threshold
-        if result:
-            gene_entry = result[0]
+        if data["essential_genes"]:
+            gene_entry = data["essential_genes"][0]
             assert "gene" in gene_entry
             assert "essential_in_conditions" in gene_entry
             assert "num_essential_conditions" in gene_entry
@@ -166,10 +192,14 @@ class TestMCPToolFunctions:
         # Data is already loaded via fixture
         result = find_growth_inhibitor_genes(limit=2)
 
-        assert isinstance(result, list)
+        # Check standardized response structure
+        assert isinstance(result, dict)
+        assert "data" in result
+        data = result["data"]
+        assert "inhibitory_genes" in data
         # Result could be empty if no inhibitor genes found with default threshold
-        if result:
-            gene_entry = result[0]
+        if data["inhibitory_genes"]:
+            gene_entry = data["inhibitory_genes"][0]
             assert "gene" in gene_entry
             assert "inhibits_growth_in_conditions" in gene_entry
             assert "num_inhibitory_conditions" in gene_entry
@@ -214,12 +244,15 @@ class TestMCPToolFunctions:
             result = get_gene_modules(gene_id)
 
             if "error" not in result:
-                assert "gene_id" in result
-                assert "modules" in result
-                assert "module_count" in result
-                assert result["gene_id"] == gene_id
-                assert isinstance(result["modules"], list)
-                assert isinstance(result["module_count"], int)
+                # Check standardized response structure
+                assert "data" in result
+                data = result["data"]
+                assert "gene_id" in data
+                assert "modules" in data
+                assert "module_count" in data
+                assert data["gene_id"] == gene_id
+                assert isinstance(data["modules"], list)
+                assert isinstance(data["module_count"], int)
 
     def test_get_gene_modules_not_found(self):
         """Test get_gene_modules with non-existent gene."""
@@ -237,9 +270,11 @@ class TestMCPToolFunctions:
             result = get_module_genes(module_id)
 
             if "error" not in result:
-                assert "module" in result
-                assert "genes" in result
-                assert "gene_count" in result
+                assert "data" in result
+                data = result["data"]
+                assert "module" in data
+                assert "genes" in data
+                assert "gene_count" in data
 
     def test_search_modules(self, loaded_metadata_registry):
         """Test search_modules function."""
@@ -247,9 +282,12 @@ class TestMCPToolFunctions:
         # Use a common term likely to find results
         result = search_modules("transport", 5)
 
-        assert isinstance(result, list)
-        if result:
-            module_entry = result[0]
+        assert isinstance(result, dict)
+        assert "data" in result
+        data = result["data"]
+        assert "modules" in data
+        if data["modules"]:
+            module_entry = data["modules"][0]
             assert "module" in module_entry
             assert "genes" in module_entry
             assert "gene_count" in module_entry
@@ -259,9 +297,12 @@ class TestMCPToolFunctions:
         # Data is already loaded via fixture
         result = get_all_modules()
 
-        assert isinstance(result, list)
-        if result:
-            module = result[0]
+        assert isinstance(result, dict)
+        assert "data" in result
+        data = result["data"]
+        assert "modules" in data
+        if data["modules"]:
+            module = data["modules"][0]
             assert "module_id" in module
             assert "name" in module
             assert "category" in module
@@ -278,10 +319,14 @@ class TestComplexAnalysisFunctions:
             condition_filter="pH", min_fitness_threshold=0.5, limit=3
         )
 
-        assert isinstance(result, list)
+        # Check standardized response structure
+        assert isinstance(result, dict)
+        assert "data" in result
+        data = result["data"]
+        assert "essential_genes" in data
         # Could be empty if no essential genes found for pH conditions
-        if result:
-            for gene_entry in result:
+        if data["essential_genes"]:
+            for gene_entry in data["essential_genes"]:
                 assert "essential_in_conditions" in gene_entry
                 # Check that conditions contain pH filter
                 for condition in gene_entry["essential_in_conditions"]:
@@ -295,10 +340,14 @@ class TestComplexAnalysisFunctions:
             condition_filter="stress", max_fitness_threshold=-0.5, limit=3
         )
 
-        assert isinstance(result, list)
+        # Check standardized response structure
+        assert isinstance(result, dict)
+        assert "data" in result
+        data = result["data"]
+        assert "inhibitory_genes" in data
         # Could be empty if no inhibitor genes found for stress conditions
-        if result:
-            for gene_entry in result:
+        if data["inhibitory_genes"]:
+            for gene_entry in data["inhibitory_genes"]:
                 assert "inhibits_growth_in_conditions" in gene_entry
                 # Check that conditions contain stress filter
                 for condition in gene_entry["inhibits_growth_in_conditions"]:

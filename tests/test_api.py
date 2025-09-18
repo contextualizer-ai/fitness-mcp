@@ -25,13 +25,16 @@ def test_gene_info_api_basic(loaded_metadata_registry):
         gene_id = list(loaded_metadata_registry.genes.keys())[0]
         result = get_gene_info(gene_id)
 
-        if "error" not in result:
-            assert "locusId" in result
-            assert "sysName" in result
-            assert "description" in result
-            assert isinstance(result["locusId"], str)
-            assert isinstance(result["sysName"], str)
-            assert isinstance(result["description"], str)
+        assert "error" not in result, f"Unexpected error: {result}"
+        # Check standardized response structure
+        assert "data" in result
+        data = result["data"]
+        assert "locusId" in data
+        assert "sysName" in data
+        assert "description" in data
+        assert isinstance(data["locusId"], str)
+        assert isinstance(data["sysName"], str)
+        assert isinstance(data["description"], str)
 
     # Test with non-existent gene
     result = get_gene_info("nonexistent_gene_123")
@@ -72,12 +75,16 @@ def test_search_genes_api_basic(loaded_metadata_registry):
 
     result = search_genes("gene")  # Search for common term
 
-    assert isinstance(result, list)
+    assert isinstance(result, dict)
+    # Check standardized response structure
+    assert "data" in result
+    data = result["data"]
+    assert "genes" in data
     # Test structure if results exist
-    if len(result) > 0:
-        assert all("locusId" in gene for gene in result)
-        assert all("sysName" in gene for gene in result)
-        assert all("description" in gene for gene in result)
+    if len(data["genes"]) > 0:
+        assert all("locusId" in gene for gene in data["genes"])
+        assert all("sysName" in gene for gene in data["genes"])
+        assert all("description" in gene for gene in data["genes"])
 
 
 def test_growth_conditions_api_basic(loaded_metadata_registry):
@@ -90,30 +97,37 @@ def test_growth_conditions_api_basic(loaded_metadata_registry):
 
     result = get_growth_conditions()
 
-    assert isinstance(result, list)
-    assert len(result) > 0  # Should have conditions with real data
-    assert all(isinstance(condition, str) for condition in result)
+    assert isinstance(result, dict)
+    # Check standardized response structure
+    assert "data" in result
+    data = result["data"]
+    assert "conditions" in data
+    assert len(data["conditions"]) > 0  # Should have conditions with real data
+    assert all(isinstance(condition, str) for condition in data["conditions"])
 
 
 def test_interpret_fitness_score_api_basic():
     """Test basic fitness score interpretation API with real data."""
     # Test positive score (gene inhibits growth)
     result = interpret_fitness_score(0.8)
-    assert "interpretation" in result
-    assert "effect" in result
-    assert "magnitude" in result
-    assert "score" in result
-    assert result["score"] == 0.8
-    assert result["effect"] == "gene_inhibits_growth"
+    assert "data" in result
+    data = result["data"]
+    assert "interpretation" in data
+    assert "effect" in data
+    assert "magnitude" in data
+    assert "score" in data
+    assert data["score"] == 0.8
+    assert data["effect"] == "gene_inhibits_growth"
 
     # Test negative score (gene is essential)
     result = interpret_fitness_score(-0.8)
-    assert result["effect"] == "gene_benefits_growth"
+    assert result["data"]["effect"] == "gene_benefits_growth"
 
     # Test neutral score
     result = interpret_fitness_score(0.05)
-    assert result["effect"] == "neutral"
+    assert result["data"]["effect"] == "neutral"
 
     # Test None score
     result = interpret_fitness_score(None)
-    assert result["effect"] == "unknown"
+    # This should return an error for None input
+    assert "error" in result
