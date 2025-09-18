@@ -11,7 +11,8 @@
 ################################################################################
 import csv
 import os
-from typing import Any, Dict, List, Optional
+import random
+from typing import Any, Dict, List, Optional, Set, Tuple
 from dataclasses import dataclass
 from fastmcp import FastMCP
 from fitness_mcp.data_processing import generate_significant_fitness_pairs
@@ -1175,6 +1176,225 @@ class PairsDataLoader:
         """
         self.load_data()
         return self.condition_to_genes.get(condition_id, [])
+    
+    def get_genes_with_all_conditions(self, conditions: Set[str]) -> Set[str]:
+        """Find genes that have pairs with ALL the given conditions."""
+        if not conditions:
+            return set()
+        
+        # Start with genes from first condition, then intersect with others
+        all_genes = None
+        for cond in conditions:
+            cond_genes = {g["gene"] for g in self.get_genes_for_condition(cond)}
+            if all_genes is None:
+                all_genes = cond_genes
+            else:
+                all_genes &= cond_genes
+        
+        return all_genes or set()
+    
+    def get_conditions_with_all_genes(self, genes: Set[str]) -> Set[str]:
+        """Find conditions that have pairs with ALL the given genes."""
+        if not genes:
+            return set()
+        
+        # Start with conditions from first gene, then intersect with others
+        all_conditions = None
+        for gene in genes:
+            gene_conds = {c["condition"] for c in self.get_conditions_for_gene(gene)}
+            if all_conditions is None:
+                all_conditions = gene_conds
+            else:
+                all_conditions &= gene_conds
+        
+        return all_conditions or set()
+    
+    def build_iterative_module_internal(self, start_gene: str, start_condition: str, max_size: int = 10) -> Dict[str, Any]:
+        """
+        Internal method to build a tight functional module starting from a gene-condition pair.
+        
+        Uses an iterative approach that alternates between:
+        1. Adding genes that have significant fitness values in ALL current conditions
+        2. Adding conditions where ALL current genes have significant fitness values
+        
+        Args:
+            start_gene: Starting gene locus ID
+            start_condition: Starting condition ID
+            max_size: Maximum total elements (genes + conditions) in module
+            
+        Returns:
+            Dict containing the built module or error information
+        """
+        self.load_data()
+        
+        # Verify starting pair exists
+        if (start_gene, start_condition) not in {(g["gene"], start_condition) for g in self.get_genes_for_condition(start_condition)}:
+            return {
+                "error": f"No significant fitness value found for gene {start_gene} in condition {start_condition}",
+                "reason": "Starting gene-condition pair not found in pairs data"
+            }
+        
+        module_genes = {start_gene}
+        module_conditions = {start_condition}
+        
+        iteration = 0
+        max_iterations = max_size * 2
+        history = []
+        
+        while iteration < max_iterations:
+            iteration += 1
+            
+            if iteration % 2 == 1:
+                # Odd: Add a gene that has pairs with ALL current conditions
+                candidate_genes = self.get_genes_with_all_conditions(module_conditions)
+                candidate_genes -= module_genes
+                
+                if not candidate_genes:
+                    history.append(f"Iteration {iteration}: No new genes found with all conditions")
+                    break
+                
+                # Choose gene with highest average absolute fitness across conditions
+                best_gene = None
+                best_score = -1
+                
+                for gene in candidate_genes:
+                    gene_data = self.get_conditions_for_gene(gene)
+                    relevant_values = [
+                        abs(c["value"]) for c in gene_data 
+                        if c["condition"] in module_conditions
+                    ]
+                    if relevant_values:
+                        avg_score = sum(relevant_values) / len(relevant_values)
+                        if avg_score > best_score:
+                            best_score = avg_score
+                            best_gene = gene
+                
+                if best_gene:
+                    module_genes.add(best_gene)
+                    history.append(f"Iteration {iteration}: Added gene {best_gene} (avg fitness: {best_score:.2f})")
+            
+            else:
+                # Even: Add a condition that has pairs with ALL current genes
+                candidate_conditions = self.get_conditions_with_all_genes(module_genes)
+                candidate_conditions -= module_conditions
+                
+                if not candidate_conditions:
+                    history.append(f"Iteration {iteration}: No new conditions found with all genes")
+                    break
+                
+                # Choose condition with highest average absolute fitness across genes
+                best_condition = None
+                best_score = -1
+                
+                for condition in candidate_conditions:
+                    cond_data = self.get_genes_for_condition(condition)
+                    relevant_values = [
+                        abs(g["value"]) for g in cond_data 
+                        if g["gene"] in module_genes
+                    ]
+                    if relevant_values:
+                        avg_score = sum(relevant_values) / len(relevant_values)
+                        if avg_score > best_score:
+                            best_score = avg_score
+                            best_condition = condition
+                
+                if best_condition:
+                    module_conditions.add(best_condition)
+                    history.append(f"Iteration {iteration}: Added condition {best_condition} (avg fitness: {best_score:.2f})")
+            
+            # Stop if we've reached max size - this indicates runaway growth
+            if len(module_genes) + len(module_conditions) >= max_size:
+                history.append(f"Iteration {iteration}: Reached maximum size limit - runaway growth detected")
+                return {
+                    "error": f"Module building terminated due to runaway growth (>{max_size} elements)",
+                    "reason": "Large modules indicate overly broad relationships rather than tight functional clusters",
+                    "suggestion": "Try starting with a more specific gene-condition pair or reduce max_size parameter",
+                    "start_gene": start_gene,
+                    "start_condition": start_condition,
+                    "partial_build": {
+                        "genes_found": len(module_genes),
+                        "conditions_found": len(module_conditions),
+                        "iterations": iteration,
+                        "history": history[-3:]  # Show last few steps
+                    }
+                }
+        
+        # Require at least 2 genes and 2 conditions for a meaningful module
+        if len(module_genes) < 2 or len(module_conditions) < 2:
+            return {
+                "error": "Module too small to be meaningful",
+                "reason": f"Found only {len(module_genes)} genes and {len(module_conditions)} conditions",
+                "suggestion": "This gene-condition pair may be too isolated or specific",
+                "start_gene": start_gene,
+                "start_condition": start_condition,
+                "build_info": {
+                    "iterations": iteration,
+                    "history": history
+                }
+            }
+        
+        # Calculate module density (how tight the relationships are)
+        density = len(module_genes) * len(module_conditions) / (len(module_genes) + len(module_conditions))
+        
+        return {
+            "start_gene": start_gene,
+            "start_condition": start_condition,
+            "module": {
+                "genes": sorted(module_genes),
+                "conditions": sorted(module_conditions),
+                "num_genes": len(module_genes),
+                "num_conditions": len(module_conditions),
+                "total_possible_pairs": len(module_genes) * len(module_conditions),
+                "density": round(density, 2)
+            },
+            "build_info": {
+                "iterations": iteration,
+                "max_size_limit": max_size,
+                "stopped_naturally": True,
+                "history": history
+            },
+            "interpretation": f"Tight functional module with {len(module_genes)} genes and {len(module_conditions)} conditions (density: {density:.2f})"
+        }
+    
+    def build_multiple_modules(self, num_modules: int = 5, max_size: int = 10, seed: Optional[int] = None) -> List[Dict[str, Any]]:
+        """
+        Build multiple modules using random starting points.
+        
+        Args:
+            num_modules: Number of modules to build
+            max_size: Maximum size per module
+            seed: Random seed for reproducibility
+            
+        Returns:
+            List of module dictionaries (successful and failed attempts)
+        """
+        self.load_data()
+        
+        if seed is not None:
+            random.seed(seed)
+        
+        # Create all possible pairs for random selection
+        all_pairs: Set[Tuple[str, str]] = set()
+        for gene_id in self.gene_to_conditions:
+            for condition_data in self.get_conditions_for_gene(gene_id):
+                all_pairs.add((gene_id, condition_data["condition"]))
+        
+        modules = []
+        used_starts: Set[Tuple[str, str]] = set()
+        
+        for i in range(num_modules):
+            # Choose a random starting pair
+            available_pairs = list(all_pairs - used_starts)
+            if not available_pairs:
+                break
+            
+            start_gene, start_condition = random.choice(available_pairs)
+            used_starts.add((start_gene, start_condition))
+            
+            module = self.build_iterative_module_internal(start_gene, start_condition, max_size)
+            modules.append(module)
+        
+        return modules
 
 
 # Global data loader instances
@@ -1824,6 +2044,90 @@ def expand_gene_condition_network(gene_id: str, condition_id: str) -> Dict[str, 
     }
 
 
+def build_iterative_module(gene_id: str, condition_id: str, max_size: int = 10) -> Dict[str, Any]:
+    """
+    Build a tight functional module starting from a gene-condition pair.
+    
+    Uses an iterative approach that alternates between:
+    1. Adding genes that have significant fitness values in ALL current conditions
+    2. Adding conditions where ALL current genes have significant fitness values
+    
+    This creates coherent modules rather than large submatrices.
+    
+    Args:
+        gene_id: Starting gene locus ID (e.g., 'Atu0001')
+        condition_id: Starting condition ID
+        max_size: Maximum total elements (genes + conditions) in module
+        
+    Returns:
+        Dict containing the built module with genes, conditions, and build history
+    """
+    return pairs_loader.build_iterative_module_internal(gene_id, condition_id, max_size)
+
+
+def discover_functional_modules(num_modules: int = 10, max_size: int = 10, seed: Optional[int] = None) -> Dict[str, Any]:
+    """
+    Discover multiple functional modules by trying random gene-condition starting points.
+    
+    This function attempts to build multiple tight functional modules using the iterative
+    approach. It provides a summary of successful vs failed attempts and returns only
+    the modules that represent tight, biologically meaningful relationships.
+    
+    Args:
+        num_modules: Number of module building attempts (default: 10)
+        max_size: Maximum size per module to prevent runaway growth (default: 10)
+        seed: Random seed for reproducibility (default: None)
+        
+    Returns:
+        Dict containing successful modules, failed attempts summary, and statistics
+    """
+    modules = pairs_loader.build_multiple_modules(num_modules, max_size, seed)
+    
+    successful_modules = [m for m in modules if "error" not in m]
+    failed_modules = [m for m in modules if "error" in m]
+    
+    # Categorize failure reasons
+    runaway_growth = len([m for m in failed_modules if "runaway growth" in m.get("error", "")])
+    too_small = len([m for m in failed_modules if "too small" in m.get("error", "")])
+    not_found = len([m for m in failed_modules if "not found" in m.get("error", "")])
+    
+    # Calculate statistics for successful modules
+    if successful_modules:
+        avg_genes = sum(m["module"]["num_genes"] for m in successful_modules) / len(successful_modules)
+        avg_conditions = sum(m["module"]["num_conditions"] for m in successful_modules) / len(successful_modules)
+        avg_density = sum(m["module"]["density"] for m in successful_modules) / len(successful_modules)
+        avg_iterations = sum(m["build_info"]["iterations"] for m in successful_modules) / len(successful_modules)
+    else:
+        avg_genes = avg_conditions = avg_density = avg_iterations = 0
+    
+    return {
+        "summary": {
+            "total_attempts": num_modules,
+            "successful_modules": len(successful_modules),
+            "failed_attempts": len(failed_modules),
+            "success_rate": round(len(successful_modules) / num_modules, 2) if num_modules > 0 else 0
+        },
+        "failure_analysis": {
+            "runaway_growth": runaway_growth,
+            "too_small": too_small,
+            "pair_not_found": not_found
+        },
+        "module_statistics": {
+            "average_genes_per_module": round(avg_genes, 1),
+            "average_conditions_per_module": round(avg_conditions, 1),
+            "average_density": round(avg_density, 2),
+            "average_iterations": round(avg_iterations, 1)
+        },
+        "successful_modules": successful_modules,
+        "parameters": {
+            "max_size_limit": max_size,
+            "random_seed": seed
+        },
+        "interpretation": f"Found {len(successful_modules)} tight functional modules out of {num_modules} attempts. "
+                         f"Modules represent coherent gene-condition relationships with average density {avg_density:.2f}."
+    }
+
+
 # MAIN SECTION
 # Create the FastMCP instance
 mcp = FastMCP("fitness_mcp")
@@ -1845,6 +2149,8 @@ mcp.tool(get_all_modules)
 mcp.tool(get_conditions_for_gene)
 mcp.tool(get_genes_for_condition)
 mcp.tool(expand_gene_condition_network)
+mcp.tool(build_iterative_module)
+mcp.tool(discover_functional_modules)
 
 
 def main() -> None:
