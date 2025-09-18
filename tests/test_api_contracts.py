@@ -234,7 +234,7 @@ class TestAPIContracts:
                 assert isinstance(analysis, dict)
                 analysis_keys = {
                     "conditions_where_gene_inhibits_growth",
-                    "conditions_where_gene_benefits_growth",
+                    "conditions_where_gene_is_essential",
                     "neutral_conditions",
                     "summary",
                 }
@@ -246,11 +246,19 @@ class TestAPIContracts:
                 summary_keys = {
                     "total_conditions_tested",
                     "inhibitory_count",
-                    "beneficial_count",
+                    "essential_count",
                     "neutral_count",
+                    "limit_applied",
                 }
                 assert set(summary.keys()) == summary_keys
-                assert all(isinstance(summary[key], int) for key in summary_keys)
+                # Check types for required fields
+                int_fields = {
+                    "total_conditions_tested",
+                    "inhibitory_count",
+                    "essential_count",
+                    "neutral_count",
+                }
+                assert all(isinstance(summary[key], int) for key in int_fields)
 
     def test_get_gene_modules_contract(self):
         """Test get_gene_modules API contract."""
