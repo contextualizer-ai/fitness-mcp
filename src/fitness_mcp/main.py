@@ -1174,7 +1174,7 @@ def expand_gene_condition_network(gene_id: str, condition_id: str) -> Dict[str, 
     }
 
 
-def build_iterative_module(gene_id: str, condition_id: str, max_size: int = 15) -> Dict[str, Any]:
+def build_iterative_module(gene_id: str, condition_id: str, max_size: int = 10) -> Dict[str, Any]:
     """
     Build a tight functional module starting from a gene-condition pair.
     
@@ -1299,10 +1299,42 @@ def build_iterative_module(gene_id: str, condition_id: str, max_size: int = 15) 
                 module_conditions.add(best_condition)
                 history.append(f"Iteration {iteration}: Added condition {best_condition} (avg fitness: {best_score:.2f})")
         
-        # Stop if we've reached max size
+        # Stop if we've reached max size - this indicates runaway growth
         if len(module_genes) + len(module_conditions) >= max_size:
-            history.append(f"Iteration {iteration}: Reached maximum size limit")
-            break
+            history.append(f"Iteration {iteration}: Reached maximum size limit - runaway growth detected")
+            return {
+                "error": f"Module building terminated due to runaway growth (>{max_size} elements)",
+                "reason": "Large modules indicate overly broad relationships rather than tight functional clusters",
+                "suggestion": "Try starting with a more specific gene-condition pair or reduce max_size parameter",
+                "start_gene": gene_id,
+                "start_condition": condition_id,
+                "partial_build": {
+                    "genes_found": len(module_genes),
+                    "conditions_found": len(module_conditions),
+                    "iterations": iteration,
+                    "history": history[-3:]  # Show last few steps
+                }
+            }
+    
+    # Only return a module if it's reasonably sized and stopped naturally
+    total_elements = len(module_genes) + len(module_conditions)
+    
+    # Require at least 2 genes and 2 conditions for a meaningful module
+    if len(module_genes) < 2 or len(module_conditions) < 2:
+        return {
+            "error": "Module too small to be meaningful",
+            "reason": f"Found only {len(module_genes)} genes and {len(module_conditions)} conditions",
+            "suggestion": "This gene-condition pair may be too isolated or specific",
+            "start_gene": gene_id,
+            "start_condition": condition_id,
+            "build_info": {
+                "iterations": iteration,
+                "history": history
+            }
+        }
+    
+    # Calculate module density (how tight the relationships are)
+    density = len(module_genes) * len(module_conditions) / (len(module_genes) + len(module_conditions))
     
     return {
         "start_gene": gene_id,
@@ -1312,14 +1344,16 @@ def build_iterative_module(gene_id: str, condition_id: str, max_size: int = 15) 
             "conditions": sorted(module_conditions),
             "num_genes": len(module_genes),
             "num_conditions": len(module_conditions),
-            "total_possible_pairs": len(module_genes) * len(module_conditions)
+            "total_possible_pairs": len(module_genes) * len(module_conditions),
+            "density": round(density, 2)
         },
         "build_info": {
             "iterations": iteration,
             "max_size_limit": max_size,
+            "stopped_naturally": True,
             "history": history
         },
-        "interpretation": "This module contains genes and conditions that are tightly connected through significant fitness effects"
+        "interpretation": f"Tight functional module with {len(module_genes)} genes and {len(module_conditions)} conditions (density: {density:.2f})"
     }
 
 

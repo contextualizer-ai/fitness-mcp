@@ -65,7 +65,7 @@ class IterativeModuleBuilder:
         
         return result
     
-    def build_module(self, start_gene: str, start_condition: str, max_size: int = 20) -> Dict:
+    def build_module(self, start_gene: str, start_condition: str, max_size: int = 10) -> Dict:
         """
         Build a module starting from a gene-condition pair.
         
@@ -123,10 +123,35 @@ class IterativeModuleBuilder:
                 module_conditions.add(new_condition)
                 history.append(f"Iteration {iteration}: Added condition {new_condition}")
             
-            # Stop if we've reached max size
+            # Stop if we've reached max size - this indicates runaway growth
             if len(module_genes) + len(module_conditions) >= max_size:
-                history.append(f"Iteration {iteration}: Reached maximum size limit")
-                break
+                history.append(f"Iteration {iteration}: Reached maximum size limit - runaway growth detected")
+                return {
+                    "error": f"Module building terminated due to runaway growth (>{max_size} elements)",
+                    "reason": "Large modules indicate overly broad relationships rather than tight functional clusters",
+                    "start_gene": start_gene,
+                    "start_condition": start_condition,
+                    "partial_build": {
+                        "genes_found": len(module_genes),
+                        "conditions_found": len(module_conditions),
+                        "iterations": iteration,
+                        "history": history[-3:]  # Show last few steps
+                    }
+                }
+        
+        # Require at least 2 genes and 2 conditions for a meaningful module
+        if len(module_genes) < 2 or len(module_conditions) < 2:
+            return {
+                "error": "Module too small to be meaningful",
+                "reason": f"Found only {len(module_genes)} genes and {len(module_conditions)} conditions",
+                "start_gene": start_gene,
+                "start_condition": start_condition,
+                "iterations": iteration,
+                "history": history
+            }
+        
+        # Calculate module density
+        density = len(module_genes) * len(module_conditions) / (len(module_genes) + len(module_conditions))
         
         return {
             "start_gene": start_gene,
@@ -136,7 +161,9 @@ class IterativeModuleBuilder:
             "num_genes": len(module_genes),
             "num_conditions": len(module_conditions),
             "total_pairs": len(module_genes) * len(module_conditions),
+            "density": round(density, 2),
             "iterations": iteration,
+            "stopped_naturally": True,
             "history": history
         }
     
@@ -199,16 +226,20 @@ def main():
         module = builder.build_module('Atu3150', start_condition, max_size=15)
         
         if "error" not in module:
-            print(f"\nModule starting from Atu3150 + {start_condition}:")
+            print(f"\nSuccessful module starting from Atu3150 + {start_condition}:")
             print(f"Genes ({module['num_genes']}): {module['module_genes']}")
             print(f"Conditions ({module['num_conditions']}): {module['module_conditions']}")
             print(f"Total possible pairs: {module['total_pairs']}")
+            print(f"Density: {module['density']}")
             print(f"Iterations: {module['iterations']}")
             print("\nHistory:")
             for step in module['history']:
                 print(f"  {step}")
         else:
-            print(f"Error: {module['error']}")
+            print(f"❌ Failed to build module: {module['error']}")
+            print(f"   Reason: {module['reason']}")
+            if 'partial_build' in module:
+                print(f"   Partial progress: {module['partial_build']['genes_found']} genes, {module['partial_build']['conditions_found']} conditions")
     else:
         print("Atu3150 not found in pairs data")
     
@@ -216,15 +247,25 @@ def main():
     print("Building 3 random modules...")
     
     # Build multiple random modules
-    modules = builder.build_multiple_modules(num_modules=3, max_size=12, seed=42)
+    modules = builder.build_multiple_modules(num_modules=5, max_size=8, seed=42)
     
-    for i, module in enumerate(modules, 1):
-        print(f"\nRandom Module {i}:")
+    successful_modules = [m for m in modules if "error" not in m]
+    failed_modules = [m for m in modules if "error" in m]
+    
+    print(f"Successfully built {len(successful_modules)} modules:")
+    for i, module in enumerate(successful_modules, 1):
+        print(f"\n✅ Module {i}:")
         print(f"  Start: {module['start_gene']} + {module['start_condition']}")
         print(f"  Genes ({module['num_genes']}): {', '.join(module['module_genes'][:5])}{'...' if module['num_genes'] > 5 else ''}")
         print(f"  Conditions ({module['num_conditions']}): {', '.join(module['module_conditions'][:3])}{'...' if module['num_conditions'] > 3 else ''}")
         print(f"  Total pairs: {module['total_pairs']}")
+        print(f"  Density: {module['density']}")
         print(f"  Iterations: {module['iterations']}")
+    
+    if failed_modules:
+        print(f"\n❌ Failed to build {len(failed_modules)} modules (runaway growth or too small)")
+        for i, module in enumerate(failed_modules, 1):
+            print(f"  {i}. {module['start_gene']} + {module['start_condition']}: {module['error']}")
 
 
 if __name__ == "__main__":
