@@ -1,3 +1,3 @@
-"""fitness_mcp package for querying database_name API."""
+"""MCP server for bacterial fitness data analysis and exploration."""
 
 __version__ = "0.1.0"

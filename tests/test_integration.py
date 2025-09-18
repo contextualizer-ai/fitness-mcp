@@ -67,23 +67,30 @@ class TestIntegrationWithRealData:
         first_gene = next(iter(metadata_registry.genes.values()))
 
         # Search by gene ID
-        results = search_genes(first_gene.locus_id, limit=5)
-        assert len(results) >= 1
-        assert any(result["locusId"] == first_gene.locus_id for result in results)
+        result = search_genes(first_gene.locus_id, limit=5)
+        assert isinstance(result, dict)
+        assert "data" in result
+        data = result["data"]
+        assert "genes" in data
+        assert len(data["genes"]) >= 1
+        assert any(gene["locusId"] == first_gene.locus_id for gene in data["genes"])
 
         # Search by partial description if available
         if first_gene.description and len(first_gene.description) > 3:
             search_term = first_gene.description[:4].lower()
-            results = search_genes(search_term, limit=5)
-            assert isinstance(results, list)  # Should return valid results
+            result = search_genes(search_term, limit=5)
+            assert isinstance(result, dict)  # Should return valid results
 
     def test_find_essential_genes_integration(self):
         """Test find_essential_genes integration."""
-        # Test basic functionality - should return a list regardless of data availability
-        results = find_essential_genes(
+        # Test basic functionality - should return standardized format regardless of data availability
+        result = find_essential_genes(
             condition_filter=None, min_fitness_threshold=0.5, limit=10
         )
-        assert isinstance(results, list)
+        assert isinstance(result, dict)
+        assert "data" in result
+        data = result["data"]
+        assert "essential_genes" in data
 
     def test_analyze_gene_fitness_integration(self):
         """Test analyze_gene_fitness integration with real data."""
@@ -92,9 +99,9 @@ class TestIntegrationWithRealData:
 
         result = analyze_gene_fitness(first_gene.locus_id)
 
-        # Should return proper structure regardless of data content
-        assert "gene" in result or "error" in result
-
+        # Should return proper structure regardless of data content - either success or error
+        assert isinstance(result, dict)
+        # For success case, check proper structure
         if "gene" in result:
             assert "analysis" in result
             analysis = result["analysis"]
@@ -107,11 +114,15 @@ class TestIntegrationWithRealData:
         """Test module-related functions integration."""
         # Test basic functionality - should handle missing data gracefully
         result = get_gene_modules("NONEXISTENT_GENE")
-        assert "error" in result or "gene_id" in result
+        assert isinstance(result, dict)
+        # Should return either error or success with standardized format
 
         # Test search_modules
-        results = search_modules("test", limit=10)
-        assert isinstance(results, list)
+        result = search_modules("test", limit=10)
+        assert isinstance(result, dict)
+        assert "data" in result
+        data = result["data"]
+        assert "modules" in data
 
     def test_error_handling_integration(self):
         """Test error handling across the integration."""

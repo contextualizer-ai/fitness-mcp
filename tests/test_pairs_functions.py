@@ -5,17 +5,19 @@ No mocks or patches are used per project policy.
 """
 
 from src.fitness_mcp.main import (
-    get_conditions_for_gene,
-    get_genes_for_condition,
-    expand_gene_condition_network,
+    get_fitness_effects_for_gene,
+    get_genes_with_fitness_effects,
+    expand_fitness_network,
 )
 
 
 class TestPairsFunctions:
     """Test cases for pairs/fitness effects MCP tool functions."""
 
-    def test_get_conditions_for_gene_with_real_data(self, loaded_metadata_registry):
-        """Test get_conditions_for_gene with real data."""
+    def test_get_fitness_effects_for_gene_with_real_data(
+        self, loaded_metadata_registry
+    ):
+        """Test get_fitness_effects_for_gene with real data."""
         # Data is already loaded via fixture - must have gene-condition data
         assert len(loaded_metadata_registry.gene_to_conditions) > 0, (
             "Must have gene-condition fitness effects loaded"
@@ -23,43 +25,48 @@ class TestPairsFunctions:
 
         # Use a real gene from the loaded data instead of hardcoded one
         gene_id = list(loaded_metadata_registry.gene_to_conditions.keys())[0]
-        result = get_conditions_for_gene(gene_id)
+        result = get_fitness_effects_for_gene(gene_id)
 
         # With real data, this should succeed
         assert "error" not in result, (
             f"Expected successful result for gene {gene_id}, got: {result}"
         )
 
-        # Check basic structure
-        assert "gene_id" in result
-        assert "conditions" in result
-        assert "total_conditions" in result
-        assert "interpretation" in result
+        # Check standardized response structure
+        assert "data" in result
+        assert "metadata" in result
+        assert "suggestions" in result
 
-        assert result["gene_id"] == gene_id
-        assert isinstance(result["conditions"], list)
-        assert isinstance(result["total_conditions"], int)
-        assert isinstance(result["interpretation"], str)
-        assert len(result["conditions"]) > 0, (
-            "Should have conditions for genes with fitness effects"
+        data = result["data"]
+        assert "gene_id" in data
+        assert "fitness_effects" in data
+        assert "total_effects" in data
+
+        assert data["gene_id"] == gene_id
+        assert isinstance(data["fitness_effects"], list)
+        assert isinstance(data["total_effects"], int)
+        assert len(data["fitness_effects"]) > 0, (
+            "Should have fitness effects for genes with significant effects"
         )
 
-        # Check structure of first condition
-        condition = result["conditions"][0]
-        assert "condition" in condition
-        assert "value" in condition
-        assert isinstance(condition["value"], (int, float))
+        # Check structure of first fitness effect
+        effect = data["fitness_effects"][0]
+        assert "condition" in effect
+        assert "fitness_value" in effect
+        assert isinstance(effect["fitness_value"], (int, float))
 
-    def test_get_conditions_for_gene_nonexistent(self, loaded_metadata_registry):
-        """Test get_conditions_for_gene with non-existent gene."""
+    def test_get_fitness_effects_for_gene_nonexistent(self, loaded_metadata_registry):
+        """Test get_fitness_effects_for_gene with non-existent gene."""
         # Data is already loaded via fixture
-        result = get_conditions_for_gene("NonExistentGene123")
+        result = get_fitness_effects_for_gene("NonExistentGene123")
 
         assert "error" in result
         assert "NonExistentGene123" in result["error"]
 
-    def test_get_genes_for_condition_with_real_data(self, loaded_metadata_registry):
-        """Test get_genes_for_condition with real data."""
+    def test_get_genes_with_fitness_effects_with_real_data(
+        self, loaded_metadata_registry
+    ):
+        """Test get_genes_with_fitness_effects with real data."""
         # Data is already loaded via fixture - must have condition-gene data
         assert len(loaded_metadata_registry.condition_to_genes) > 0, (
             "Must have condition-gene fitness effects loaded"
@@ -67,45 +74,46 @@ class TestPairsFunctions:
 
         # Get a real condition from the data
         condition_id = list(loaded_metadata_registry.condition_to_genes.keys())[0]
-        result = get_genes_for_condition(condition_id)
+        result = get_genes_with_fitness_effects(condition_id)
 
         # With real data, this should succeed
         assert "error" not in result, (
             f"Expected successful result for condition {condition_id}, got: {result}"
         )
 
-        # Check basic structure
-        assert "condition_id" in result
-        assert "genes" in result
-        assert "total_genes" in result
-        assert "interpretation" in result
+        # Check standardized response structure
+        assert "data" in result
+        assert "metadata" in result
+        assert "suggestions" in result
 
-        assert result["condition_id"] == condition_id
-        assert isinstance(result["genes"], list)
-        assert isinstance(result["total_genes"], int)
-        assert isinstance(result["interpretation"], str)
-        assert len(result["genes"]) > 0, (
+        data = result["data"]
+        assert "condition_id" in data
+        assert "fitness_effects" in data
+        assert "total_genes" in data
+
+        assert data["condition_id"] == condition_id
+        assert isinstance(data["fitness_effects"], list)
+        assert isinstance(data["total_genes"], int)
+        assert len(data["fitness_effects"]) > 0, (
             "Should have genes for conditions with fitness effects"
         )
 
-        # Check structure of first gene
-        gene = result["genes"][0]
-        assert "gene" in gene
-        assert "value" in gene
-        assert isinstance(gene["value"], (int, float))
+        # Check structure of first gene effect
+        gene_effect = data["fitness_effects"][0]
+        assert "gene" in gene_effect
+        assert "fitness_value" in gene_effect
+        assert isinstance(gene_effect["fitness_value"], (int, float))
 
-    def test_get_genes_for_condition_nonexistent(self, loaded_metadata_registry):
-        """Test get_genes_for_condition with non-existent condition."""
+    def test_get_genes_with_fitness_effects_nonexistent(self, loaded_metadata_registry):
+        """Test get_genes_with_fitness_effects with non-existent condition."""
         # Data is already loaded via fixture
-        result = get_genes_for_condition("NonExistentCondition123")
+        result = get_genes_with_fitness_effects("NonExistentCondition123")
 
         assert "error" in result
         assert "NonExistentCondition123" in result["error"]
 
-    def test_expand_gene_condition_network_with_real_data(
-        self, loaded_metadata_registry
-    ):
-        """Test expand_gene_condition_network with real data."""
+    def test_expand_fitness_network_with_real_data(self, loaded_metadata_registry):
+        """Test expand_fitness_network with real data."""
         # Data is already loaded via fixture - must have gene-condition pairs
         assert len(loaded_metadata_registry.gene_to_conditions) > 0, (
             "Must have gene-condition fitness effects loaded"
@@ -117,7 +125,7 @@ class TestPairsFunctions:
         assert len(conditions) > 0, "Gene must have associated conditions"
 
         condition_id = conditions[0]
-        result = expand_gene_condition_network(gene_id, condition_id)
+        result = expand_fitness_network(gene_id, condition_id)
 
         # With real data, this should succeed
         assert "error" not in result, (
@@ -158,22 +166,20 @@ class TestPairsFunctions:
         assert "gene_expansion_factor" in network_size
         assert "condition_expansion_factor" in network_size
 
-    def test_expand_gene_condition_network_nonexistent_pair(
-        self, loaded_metadata_registry
-    ):
-        """Test expand_gene_condition_network with non-existent gene-condition pair."""
+    def test_expand_fitness_network_nonexistent_pair(self, loaded_metadata_registry):
+        """Test expand_fitness_network with non-existent gene-condition pair."""
         # Data is already loaded via fixture
-        result = expand_gene_condition_network("Atu3150", "NonExistentCondition123")
+        result = expand_fitness_network("Atu3150", "NonExistentCondition123")
 
         assert "error" in result
-        assert "No significant fitness value found" in result["error"]
+        assert "No significant fitness effect found" in result["error"]
 
 
 class TestPairsFunctionsBehaviorPreservation:
     """Test cases to preserve exact behavior before refactoring."""
 
-    def test_get_conditions_for_gene_output_schema(self, loaded_metadata_registry):
-        """Test that get_conditions_for_gene maintains exact output schema."""
+    def test_get_fitness_effects_for_gene_output_schema(self, loaded_metadata_registry):
+        """Test that get_fitness_effects_for_gene maintains exact output schema."""
         # Data is already loaded via fixture - must have data
         assert len(loaded_metadata_registry.gene_to_conditions) > 0, (
             "Must have gene-condition fitness effects loaded"
@@ -181,38 +187,37 @@ class TestPairsFunctionsBehaviorPreservation:
 
         # Use real data to test schema - should have successful results with real data
         gene_id = list(loaded_metadata_registry.gene_to_conditions.keys())[0]
-        result = get_conditions_for_gene(gene_id)
+        result = get_fitness_effects_for_gene(gene_id)
 
         # With real data and a valid gene_id, we should get successful results
         assert "error" not in result, (
             f"Expected successful result for gene {gene_id}, got: {result}"
         )
 
-        # Exact schema preservation
-        required_keys = {
-            "gene_id",
-            "conditions",
-            "total_conditions",
-            "interpretation",
-        }
+        # Standardized response schema
+        required_keys = {"data", "metadata", "suggestions"}
         assert set(result.keys()) == required_keys
 
-        # Value types
-        assert isinstance(result["gene_id"], str)
-        assert isinstance(result["conditions"], list)
-        assert isinstance(result["total_conditions"], int)
-        assert isinstance(result["interpretation"], str)
-        assert len(result["conditions"]) > 0, (
-            "Should have conditions for genes with fitness effects"
+        # Data section
+        data = result["data"]
+        data_keys = {"gene_id", "fitness_effects", "total_effects"}
+        assert set(data.keys()) == data_keys
+        assert isinstance(data["gene_id"], str)
+        assert isinstance(data["fitness_effects"], list)
+        assert isinstance(data["total_effects"], int)
+        assert len(data["fitness_effects"]) > 0, (
+            "Should have fitness effects for genes with significant effects"
         )
 
-        # Conditions structure
-        condition = result["conditions"][0]
-        assert "condition" in condition
-        assert "value" in condition
+        # Fitness effects structure
+        effect = data["fitness_effects"][0]
+        assert "condition" in effect
+        assert "fitness_value" in effect
 
-    def test_get_genes_for_condition_output_schema(self, loaded_metadata_registry):
-        """Test that get_genes_for_condition maintains exact output schema."""
+    def test_get_genes_with_fitness_effects_output_schema(
+        self, loaded_metadata_registry
+    ):
+        """Test that get_genes_with_fitness_effects maintains exact output schema."""
         # Data is already loaded via fixture - must have data
         assert len(loaded_metadata_registry.condition_to_genes) > 0, (
             "Must have condition-gene fitness effects loaded"
@@ -220,35 +225,30 @@ class TestPairsFunctionsBehaviorPreservation:
 
         # Use real data to test schema - should have successful results with real data
         condition_id = list(loaded_metadata_registry.condition_to_genes.keys())[0]
-        result = get_genes_for_condition(condition_id)
+        result = get_genes_with_fitness_effects(condition_id)
 
         # With real data and a valid condition_id, we should get successful results
         assert "error" not in result, (
             f"Expected successful result for condition {condition_id}, got: {result}"
         )
 
-        # Exact schema preservation
-        required_keys = {
-            "condition_id",
-            "genes",
-            "total_genes",
-            "interpretation",
-        }
+        # Standardized response schema
+        required_keys = {"data", "metadata", "suggestions"}
         assert set(result.keys()) == required_keys
 
-        # Value types
-        assert isinstance(result["condition_id"], str)
-        assert isinstance(result["genes"], list)
-        assert isinstance(result["total_genes"], int)
-        assert isinstance(result["interpretation"], str)
-        assert len(result["genes"]) > 0, (
+        # Data section
+        data = result["data"]
+        data_keys = {"condition_id", "fitness_effects", "total_genes"}
+        assert set(data.keys()) == data_keys
+        assert isinstance(data["condition_id"], str)
+        assert isinstance(data["fitness_effects"], list)
+        assert isinstance(data["total_genes"], int)
+        assert len(data["fitness_effects"]) > 0, (
             "Should have genes for conditions with fitness effects"
         )
 
-    def test_expand_gene_condition_network_output_schema(
-        self, loaded_metadata_registry
-    ):
-        """Test that expand_gene_condition_network maintains exact output schema."""
+    def test_expand_fitness_network_output_schema(self, loaded_metadata_registry):
+        """Test that expand_fitness_network maintains exact output schema."""
         # Data is already loaded via fixture - must have data
         assert len(loaded_metadata_registry.gene_to_conditions) > 0, (
             "Must have gene-condition fitness effects loaded"
@@ -260,7 +260,7 @@ class TestPairsFunctionsBehaviorPreservation:
         assert len(conditions) > 0, "Gene must have associated conditions"
 
         condition_id = conditions[0]
-        result = expand_gene_condition_network(gene_id, condition_id)
+        result = expand_fitness_network(gene_id, condition_id)
 
         # With real data and valid gene-condition pair, we should get successful results
         assert "error" not in result, (

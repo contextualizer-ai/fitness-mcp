@@ -18,13 +18,137 @@ from fastmcp import FastMCP
 from fitness_mcp.data_processing import generate_significant_fitness_pairs
 
 
+# CONFIGURATION SECTION
+class FitnessConfig:
+    """Configuration for fitness analysis thresholds and limits.
+
+    Centralizes all configurable parameters for POSIX-style tool consistency.
+
+    Note: __slots__ is used here for Python memory optimization (not LinkML schema).
+    It restricts instance attributes to only those listed, reducing memory overhead
+    and improving performance for frequently instantiated objects.
+    """
+
+    __slots__ = (
+        "significance_threshold",
+        "essential_threshold",
+        "inhibitory_threshold",
+        "max_conditions_per_gene",
+        "default_search_limit",
+        "max_search_limit",
+    )
+
+    def __init__(self) -> None:
+        self.significance_threshold: float = (
+            2.0  # |fitness| > threshold for significant effects
+        )
+        self.essential_threshold: float = (
+            0.5  # Minimum positive fitness for essential genes
+        )
+        self.inhibitory_threshold: float = (
+            -0.5
+        )  # Maximum negative fitness for inhibitory genes
+        self.max_conditions_per_gene: int = (
+            3  # Limit conditions shown per gene in results
+        )
+        self.default_search_limit: int = 3  # Default limit for search operations
+        self.max_search_limit: int = 50  # Maximum allowed search limit
+
+
+# Global configuration instance
+config = FitnessConfig()
+
+
+# INPUT VALIDATION SECTION
+class ValidationResult:
+    """Result of input validation for POSIX-style error handling."""
+
+    __slots__ = ("is_valid", "error_message", "suggestions")
+
+    def __init__(
+        self,
+        is_valid: bool,
+        error_message: str = "",
+        suggestions: Optional[List[str]] = None,
+    ) -> None:
+        self.is_valid = is_valid
+        self.error_message = error_message
+        self.suggestions = suggestions if suggestions is not None else []
+
+
+def validate_gene_id(gene_id: str) -> ValidationResult:
+    """Validate gene ID format before expensive operations.
+
+    POSIX-style: fail fast with clear error messages.
+    """
+    if not gene_id or not isinstance(gene_id, str):
+        return ValidationResult(
+            is_valid=False,
+            error_message="Gene ID must be a non-empty string",
+            suggestions=["Use format like 'Atu0001' or gene symbol like 'rpoA'"],
+        )
+
+    if len(gene_id.strip()) == 0:
+        return ValidationResult(
+            is_valid=False,
+            error_message="Gene ID cannot be empty or whitespace",
+            suggestions=["Use format like 'Atu0001' or gene symbol like 'rpoA'"],
+        )
+
+    return ValidationResult(is_valid=True)
+
+
+def validate_search_limit(limit: int) -> ValidationResult:
+    """Validate search limit parameter for consistency."""
+    if not isinstance(limit, int):
+        return ValidationResult(
+            is_valid=False,
+            error_message="Search limit must be an integer",
+            suggestions=[f"Use values between 1 and {config.max_search_limit}"],
+        )
+
+    if limit < 1:
+        return ValidationResult(
+            is_valid=False,
+            error_message="Search limit must be at least 1",
+            suggestions=[f"Use values between 1 and {config.max_search_limit}"],
+        )
+
+    if limit > config.max_search_limit:
+        return ValidationResult(
+            is_valid=False,
+            error_message=f"Search limit exceeds maximum of {config.max_search_limit}",
+            suggestions=[f"Use values between 1 and {config.max_search_limit}"],
+        )
+
+    return ValidationResult(is_valid=True)
+
+
+def validate_fitness_threshold(
+    threshold: float, threshold_type: str = "fitness"
+) -> ValidationResult:
+    """Validate fitness threshold parameters."""
+    if not isinstance(threshold, (int, float)):
+        return ValidationResult(
+            is_valid=False,
+            error_message=f"{threshold_type} threshold must be a number",
+            suggestions=["Use numeric values like 0.5, -0.5, or 2.0"],
+        )
+
+    return ValidationResult(is_valid=True)
+
+
 # METADATA REGISTRY SECTION
-import threading
 
 
 @dataclass
 class GeneMetadata:
-    """Metadata for a gene/locus (no fitness data)."""
+    """Metadata for a gene/locus (no fitness data).
+
+    Memory-optimized with __slots__ for better performance.
+    """
+
+    __slots__ = ("locus_id", "sys_name", "description")
 
     locus_id: str
     sys_name: str
@@ -33,7 +157,24 @@ class GeneMetadata:
 
 @dataclass
 class ConditionMetadata:
-    """Metadata for an experimental condition."""
+    """Metadata for an experimental condition.
+
+    Memory-optimized with __slots__ for better performance.
+    """
+
+    __slots__ = (
+        "condition_id",
+        "short_desc",
+        "long_desc",
+        "media",
+        "temperature",
+        "pH",
+        "aerobic",
+        "condition_1",
+        "concentration_1",
+        "units_1",
+        "exp_group",
+    )
 
     condition_id: str
     short_desc: str
@@ -50,7 +191,12 @@ class ConditionMetadata:
 
 @dataclass
 class ModuleMetadata:
-    """Metadata for a functional module."""
+    """Metadata for a functional module.
+
+    Memory-optimized with __slots__ for better performance.
+    """
+
+    __slots__ = ("module_id", "name", "category", "gene_count", "gene_list")
 
     module_id: int
     name: str
@@ -61,7 +207,12 @@ class ModuleMetadata:
 
 @dataclass
 class FitnessEffect:
-    """A pre-filtered significant fitness effect."""
+    """A pre-filtered significant fitness effect.
+
+    Memory-optimized with __slots__ for better performance.
+    """
+
+    __slots__ = ("gene_id", "condition_id", "fitness_value")
 
     gene_id: str
     condition_id: str
@@ -111,10 +262,9 @@ class MetadataRegistry:
         self.gene_to_conditions: Dict[str, List[str]] = {}
         self.condition_to_genes: Dict[str, List[str]] = {}
 
-        # File tracking and thread safety
+        # File tracking
         self.loaded = False
         self._file_mtimes: Dict[str, float] = {}
-        self._lock = threading.RLock()
 
     def _needs_reload(self) -> bool:
         """Check if any data file has been modified since last load."""
@@ -142,27 +292,26 @@ class MetadataRegistry:
             return False
 
     def load_data(self) -> None:
-        """Load all metadata from files with thread safety."""
-        with self._lock:
-            if not self._needs_reload():
-                return
+        """Load all metadata from files."""
+        if not self._needs_reload():
+            return
 
-            # Clear existing data
-            self._clear_data()
+        # Clear existing data
+        self._clear_data()
 
-            # Load in dependency order
-            self._load_gene_metadata()
-            self._load_condition_metadata()
-            self._load_module_metadata()
-            self._load_fitness_effects()
+        # Load in dependency order
+        self._load_gene_metadata()
+        self._load_condition_metadata()
+        self._load_module_metadata()
+        self._load_fitness_effects()
 
-            # Build index structures
-            self._build_indexes()
+        # Build index structures
+        self._build_indexes()
 
-            # Update file timestamps
-            self._update_file_mtimes()
+        # Update file timestamps
+        self._update_file_mtimes()
 
-            self.loaded = True
+        self.loaded = True
 
     def _clear_data(self) -> None:
         """Clear all data structures."""
@@ -531,57 +680,53 @@ class FitnessDataLoader:
         self.conditions: List[str] = []
         self.condition_details: Dict[str, Dict[str, str]] = {}
         self.loaded = False
-        self._lock = threading.RLock()
 
     def _needs_reload(self) -> bool:
         """Check if data needs to be loaded."""
         return not self.loaded
 
     def load_data(self) -> None:
-        """Load the fitness data from the tab-separated file with thread safety."""
-        with self._lock:
-            if not self._needs_reload():
-                return
+        """Load the fitness data from the tab-separated file."""
+        if not self._needs_reload():
+            return
 
-            if not os.path.exists(self.data_file):
-                raise FileNotFoundError(
-                    f"Fitness data file not found: {self.data_file}"
-                )
+        if not os.path.exists(self.data_file):
+            raise FileNotFoundError(f"Fitness data file not found: {self.data_file}")
 
-            # Load experimental conditions descriptions first
-            self._load_condition_details()
+        # Load experimental conditions descriptions first
+        self._load_condition_details()
 
-            with open(self.data_file, "r") as f:
-                reader = csv.reader(f, delimiter="\t")
+        with open(self.data_file, "r") as f:
+            reader = csv.reader(f, delimiter="\t")
 
-                # Read header (condition names)
-                header = next(reader)
-                self.conditions = header[3:]  # Skip locusId, sysName, desc columns
+            # Read header (condition names)
+            header = next(reader)
+            self.conditions = header[3:]  # Skip locusId, sysName, desc columns
 
-                # Read gene data
-                for row in reader:
-                    if len(row) < 4:  # Skip incomplete rows
-                        continue
+            # Read gene data
+            for row in reader:
+                if len(row) < 4:  # Skip incomplete rows
+                    continue
 
-                    locus_id = row[0]
-                    sys_name = row[1]
-                    description = row[2]
-                    fitness_values = [
-                        float(val) if val and val != "NA" else None for val in row[3:]
-                    ]
+                locus_id = row[0]
+                sys_name = row[1]
+                description = row[2]
+                fitness_values = [
+                    float(val) if val and val != "NA" else None for val in row[3:]
+                ]
 
-                    self.genes[locus_id] = {
-                        "locusId": locus_id,
-                        "sysName": sys_name,
-                        "description": description,
-                        "fitness_values": fitness_values,
-                    }
+                self.genes[locus_id] = {
+                    "locusId": locus_id,
+                    "sysName": sys_name,
+                    "description": description,
+                    "fitness_values": fitness_values,
+                }
 
-                    # Also index by sysName if different from locusId
-                    if sys_name and sys_name != locus_id:
-                        self.genes[sys_name] = self.genes[locus_id]
+                # Also index by sysName if different from locusId
+                if sys_name and sys_name != locus_id:
+                    self.genes[sys_name] = self.genes[locus_id]
 
-            self.loaded = True
+        self.loaded = True
 
     def _load_condition_details(self) -> None:
         """Load experimental condition details from the description file."""
@@ -842,21 +987,55 @@ def get_gene_info(gene_id: str) -> Dict[str, Any]:
     """
     Get basic information about a gene.
 
+    POSIX-style tool: does one thing well - retrieves gene metadata.
+
+    CHAIN WITH:
+    - get_gene_fitness() to get fitness data for this gene
+    - get_gene_modules() to find functional modules containing this gene
+    - search_genes() to find similar genes
+
     Args:
         gene_id: Gene locus ID (e.g., 'Atu0001') or system name
 
     Returns:
-        Dict containing gene information including locusId, sysName, and description
+        Dict with standardized structure:
+        {
+            "data": {"locusId": str, "sysName": str, "description": str},
+            "metadata": {"source": str},
+            "suggestions": [str]
+        }
     """
+    # Input validation
+    validation = validate_gene_id(gene_id)
+    if not validation.is_valid:
+        return {
+            "error": validation.error_message,
+            "suggestions": validation.suggestions,
+        }
+
     gene_meta = metadata_registry.get_gene(gene_id)
     if gene_meta:
         return {
-            "locusId": gene_meta.locus_id,
-            "sysName": gene_meta.sys_name,
-            "description": gene_meta.description,
+            "data": {
+                "locusId": gene_meta.locus_id,
+                "sysName": gene_meta.sys_name,
+                "description": gene_meta.description,
+            },
+            "metadata": {"source": "MetadataRegistry gene lookup"},
+            "suggestions": [
+                "get_gene_fitness",
+                "get_gene_modules",
+                "get_fitness_effects_for_gene",
+            ],
         }
     else:
-        return {"error": f"Gene {gene_id} not found"}
+        return {
+            "error": f"Gene {gene_id} not found",
+            "suggestions": [
+                "try search_genes() to find similar gene names",
+                "verify gene ID format (e.g., 'Atu0001' or gene symbol)",
+            ],
+        }
 
 
 def get_gene_fitness(
@@ -877,19 +1056,46 @@ def get_gene_fitness(
     return fitness_loader.get_gene_fitness(gene_id, condition_filter)
 
 
-def search_genes(query: str, limit: int = 3) -> List[Dict[str, Any]]:
+def search_genes(query: str, limit: int = 3) -> Dict[str, Any]:
     """
     Search for genes by name or description.
+
+    POSIX-style tool: does one thing well - searches gene metadata.
+
+    CHAIN WITH:
+    - get_gene_info() to get detailed info for specific genes
+    - get_gene_fitness() to analyze fitness data for found genes
+    - get_gene_modules() to find functional context
 
     Args:
         query: Search term to match against gene names or descriptions
         limit: Maximum number of results to return (default: 3)
 
     Returns:
-        List of dictionaries containing matching gene information
+        Dict with standardized structure:
+        {
+            "data": {"genes": List[Dict], "total_results": int, "query": str},
+            "metadata": {"search_type": str, "limit_applied": int},
+            "suggestions": [str]
+        }
     """
+    # Input validation
+    if not query or not isinstance(query, str) or len(query.strip()) == 0:
+        return {
+            "error": "Search query must be a non-empty string",
+            "suggestions": ["Use gene names, symbols, or description keywords"],
+        }
+
+    limit_validation = validate_search_limit(limit)
+    if not limit_validation.is_valid:
+        return {
+            "error": limit_validation.error_message,
+            "suggestions": limit_validation.suggestions,
+        }
+
     gene_metas = metadata_registry.search_genes(query, limit)
-    return [
+
+    genes_data = [
         {
             "locusId": gene_meta.locus_id,
             "sysName": gene_meta.sys_name,
@@ -898,54 +1104,142 @@ def search_genes(query: str, limit: int = 3) -> List[Dict[str, Any]]:
         for gene_meta in gene_metas
     ]
 
+    return {
+        "data": {"genes": genes_data, "total_results": len(genes_data), "query": query},
+        "metadata": {"search_type": "fuzzy_match", "limit_applied": limit},
+        "suggestions": ["get_gene_info", "get_gene_fitness", "get_gene_modules"]
+        if genes_data
+        else ["try broader search terms", "check spelling of gene names"],
+    }
 
-def get_growth_conditions(condition_filter: Optional[str] = None) -> List[str]:
+
+def get_growth_conditions(condition_filter: Optional[str] = None) -> Dict[str, Any]:
     """
     Get list of available growth conditions.
+
+    POSIX-style tool: does one thing well - lists experimental conditions.
+
+    CHAIN WITH:
+    - get_condition_details() to get detailed info for specific conditions
+    - get_genes_with_fitness_effects() to find genes affected by conditions
+    - find_essential_genes() or find_growth_inhibitor_genes() for condition-specific analysis
 
     Args:
         condition_filter: Optional filter to match condition names (e.g., 'LB', 'glucose', 'metal')
 
     Returns:
-        List of condition names
+        Dict with standardized structure:
+        {
+            "data": {"conditions": List[str], "total_conditions": int, "filter_applied": str},
+            "metadata": {"source": str},
+            "suggestions": [str]
+        }
     """
-    return metadata_registry.get_all_conditions(condition_filter)
+    # Input validation for filter
+    if condition_filter is not None and (
+        not isinstance(condition_filter, str) or len(condition_filter.strip()) == 0
+    ):
+        return {
+            "error": "Condition filter must be a non-empty string if provided",
+            "suggestions": [
+                "Use terms like 'pH', 'stress', 'carbon', 'metal', or 'antibiotic'"
+            ],
+        }
+
+    conditions = metadata_registry.get_all_conditions(condition_filter)
+
+    return {
+        "data": {
+            "conditions": conditions,
+            "total_conditions": len(conditions),
+            "filter_applied": condition_filter if condition_filter else "none",
+        },
+        "metadata": {"source": "MetadataRegistry condition listing"},
+        "suggestions": [
+            "get_condition_details",
+            "get_genes_with_fitness_effects",
+            "find_essential_genes",
+            "find_growth_inhibitor_genes",
+        ]
+        if conditions
+        else ["try different filter terms", "remove filter to see all conditions"],
+    }
 
 
 def get_condition_details(condition_name: str) -> Dict[str, Any]:
     """
     Get detailed information about a specific growth condition.
 
+    POSIX-style tool: does one thing well - retrieves condition metadata.
+
+    CHAIN WITH:
+    - get_genes_with_fitness_effects() to find genes affected by this condition
+    - get_growth_conditions() to explore related conditions
+    - find_essential_genes() or find_growth_inhibitor_genes() for condition-specific analysis
+
     Args:
         condition_name: Name of the condition (e.g., 'set10IT004', 'set10IT020')
 
     Returns:
-        Dict with detailed condition information including description, media, temperature, pH, and treatment details
+        Dict with standardized structure:
+        {
+            "data": {"condition_info": Dict, "experimental_setup": Dict},
+            "metadata": {"source": str},
+            "suggestions": [str]
+        }
     """
+    # Input validation
+    if (
+        not condition_name
+        or not isinstance(condition_name, str)
+        or len(condition_name.strip()) == 0
+    ):
+        return {
+            "error": "Condition name must be a non-empty string",
+            "suggestions": ["Use condition identifiers from get_growth_conditions()"],
+        }
+
     condition_meta = metadata_registry.get_condition(condition_name)
     if not condition_meta:
-        return {"error": f"Condition {condition_name} not found"}
+        return {
+            "error": f"Condition {condition_name} not found",
+            "suggestions": [
+                "try get_growth_conditions() to find valid condition names",
+                "check condition name spelling and format",
+            ],
+        }
 
     return {
-        "condition_name": condition_meta.condition_id,
-        "short_description": condition_meta.short_desc,
-        "long_description": condition_meta.long_desc,
-        "experimental_group": condition_meta.exp_group,
-        "growth_conditions": {
-            "media": condition_meta.media,
-            "temperature": str(condition_meta.temperature) + "°C"
-            if condition_meta.temperature
-            else "",
-            "pH": condition_meta.pH,
-            "aerobic": condition_meta.aerobic,
+        "data": {
+            "condition_info": {
+                "condition_name": condition_meta.condition_id,
+                "short_description": condition_meta.short_desc,
+                "long_description": condition_meta.long_desc,
+                "experimental_group": condition_meta.exp_group,
+            },
+            "experimental_setup": {
+                "media": condition_meta.media,
+                "temperature": str(condition_meta.temperature) + "°C"
+                if condition_meta.temperature
+                else "",
+                "pH": condition_meta.pH,
+                "aerobic": condition_meta.aerobic,
+                "treatment": {
+                    "compound": condition_meta.condition_1,
+                    "concentration": condition_meta.concentration_1,
+                    "units": condition_meta.units_1,
+                }
+                if condition_meta.condition_1
+                else None,
+            },
         },
-        "treatment": {
-            "compound": condition_meta.condition_1,
-            "concentration": condition_meta.concentration_1,
-            "units": condition_meta.units_1,
-        }
-        if condition_meta.condition_1
-        else None,
+        "metadata": {"source": "MetadataRegistry condition lookup"},
+        "suggestions": [
+            "get_genes_with_fitness_effects",
+            "find_essential_genes",
+            "find_growth_inhibitor_genes",
+            "get_growth_conditions",
+        ],
     }
 
 
@@ -953,25 +1247,78 @@ def interpret_fitness_score(fitness_score: float) -> Dict[str, Any]:
     """
     Interpret a fitness score in biological terms.
 
+    POSIX-style tool: does one thing well - interprets fitness values.
+
+    CHAIN WITH:
+    - get_fitness_effects_for_gene() to find fitness scores to interpret
+    - find_essential_genes() or find_growth_inhibitor_genes() for systematic analysis
+    - analyze_gene_fitness() for comprehensive gene analysis
+
     Args:
         fitness_score: Numerical fitness score from gene knockout experiment
 
     Returns:
-        Dict with biological interpretation of the fitness effect:
-        - Negative scores: Gene knockout reduces fitness (gene is beneficial/essential for growth)
-        - Positive scores: Gene knockout improves fitness (gene normally inhibits growth)
-        - Near zero: Gene knockout has minimal effect
+        Dict with standardized structure:
+        {
+            "data": {"interpretation": str, "effect": str, "magnitude": str, "score": float},
+            "metadata": {"interpretation_rules": Dict},
+            "suggestions": [str]
+        }
     """
-    return metadata_registry.interpret_fitness_score(fitness_score)
+    # Input validation
+    fitness_validation = validate_fitness_threshold(fitness_score, "fitness score")
+    if not fitness_validation.is_valid:
+        return {
+            "error": fitness_validation.error_message,
+            "suggestions": fitness_validation.suggestions,
+        }
+
+    interpretation_result = metadata_registry.interpret_fitness_score(fitness_score)
+
+    return {
+        "data": {
+            "interpretation": interpretation_result["interpretation"],
+            "effect": interpretation_result["effect"],
+            "magnitude": interpretation_result["magnitude"],
+            "score": interpretation_result["score"],
+        },
+        "metadata": {
+            "interpretation_rules": {
+                "negative_threshold": -0.1,
+                "positive_threshold": 0.1,
+                "magnitude_ranges": {
+                    "minimal": "<0.2",
+                    "moderate": "0.2-0.5",
+                    "strong": "0.5-1.0",
+                    "very_strong": ">1.0",
+                },
+            }
+        },
+        "suggestions": [
+            "get_fitness_effects_for_gene",
+            "find_essential_genes",
+            "find_growth_inhibitor_genes",
+        ]
+        if interpretation_result["effect"] != "unknown"
+        else ["provide a valid numerical fitness score"],
+    }
 
 
 def find_essential_genes(
     condition_filter: Optional[str] = None,
     min_fitness_threshold: float = 0.5,
     limit: int = 5,
-) -> List[Dict[str, Any]]:
+) -> Dict[str, Any]:
     """
     Find genes that appear essential (positive fitness scores when knocked out).
+
+    POSIX-style tool: does one thing well - identifies essential genes.
+
+    CHAIN WITH:
+    - get_gene_info() to get details for essential genes found
+    - interpret_fitness_score() to understand significance levels
+    - get_condition_details() to understand experimental conditions
+    - analyze_gene_fitness() for detailed analysis of specific genes
 
     OPTIMIZED: Uses pre-filtered significant fitness effects instead of scanning 4.9M cells.
     Performance: ~40K filtered pairs vs 4.9M cell scan (100x faster).
@@ -982,8 +1329,38 @@ def find_essential_genes(
         limit: Maximum number of genes to return
 
     Returns:
-        List of genes with positive fitness scores indicating essentiality
+        Dict with standardized structure:
+        {
+            "data": {"essential_genes": List[Dict], "total_genes": int, "analysis_params": Dict},
+            "metadata": {"algorithm": str, "performance_info": str},
+            "suggestions": [str]
+        }
     """
+    # Input validation
+    if condition_filter is not None and (
+        not isinstance(condition_filter, str) or len(condition_filter.strip()) == 0
+    ):
+        return {
+            "error": "Condition filter must be a non-empty string if provided",
+            "suggestions": ["Use terms like 'pH', 'stress', 'carbon', 'metal'"],
+        }
+
+    threshold_validation = validate_fitness_threshold(
+        min_fitness_threshold, "minimum fitness threshold"
+    )
+    if not threshold_validation.is_valid:
+        return {
+            "error": threshold_validation.error_message,
+            "suggestions": threshold_validation.suggestions,
+        }
+
+    limit_validation = validate_search_limit(limit)
+    if not limit_validation.is_valid:
+        return {
+            "error": limit_validation.error_message,
+            "suggestions": limit_validation.suggestions,
+        }
+
     metadata_registry.load_data()
 
     # Use pre-filtered significant effects instead of full matrix scan
@@ -1049,16 +1426,52 @@ def find_essential_genes(
 
     # Sort by number of conditions where gene appears essential
     essential_genes.sort(key=itemgetter("num_essential_conditions"), reverse=True)
-    return essential_genes[:limit]
+    final_genes = essential_genes[:limit]
+
+    return {
+        "data": {
+            "essential_genes": final_genes,
+            "total_genes": len(final_genes),
+            "analysis_params": {
+                "condition_filter": condition_filter,
+                "min_fitness_threshold": min_fitness_threshold,
+                "limit": limit,
+            },
+        },
+        "metadata": {
+            "algorithm": "pre-filtered significant fitness effects scan",
+            "performance_info": "~40K filtered effects vs 4.9M cell scan (100x faster)",
+        },
+        "suggestions": [
+            "get_gene_info",
+            "interpret_fitness_score",
+            "get_condition_details",
+            "analyze_gene_fitness",
+        ]
+        if final_genes
+        else [
+            "try lower min_fitness_threshold",
+            "try different condition_filter",
+            "try find_growth_inhibitor_genes",
+        ],
+    }
 
 
 def find_growth_inhibitor_genes(
     condition_filter: Optional[str] = None,
     max_fitness_threshold: float = -0.5,
     limit: int = 5,
-) -> List[Dict[str, Any]]:
+) -> Dict[str, Any]:
     """
     Find genes that inhibit growth (negative fitness scores when knocked out).
+
+    POSIX-style tool: does one thing well - identifies growth-inhibiting genes.
+
+    CHAIN WITH:
+    - get_gene_info() to get details for inhibitory genes found
+    - interpret_fitness_score() to understand significance levels
+    - get_condition_details() to understand experimental conditions
+    - analyze_gene_fitness() for detailed analysis of specific genes
 
     OPTIMIZED: Uses pre-filtered significant fitness effects instead of scanning 4.9M cells.
     Performance: ~40K filtered pairs vs 4.9M cell scan (100x faster).
@@ -1069,8 +1482,38 @@ def find_growth_inhibitor_genes(
         limit: Maximum number of genes to return
 
     Returns:
-        List of genes with negative fitness scores indicating they normally inhibit growth
+        Dict with standardized structure:
+        {
+            "data": {"inhibitory_genes": List[Dict], "total_genes": int, "analysis_params": Dict},
+            "metadata": {"algorithm": str, "performance_info": str},
+            "suggestions": [str]
+        }
     """
+    # Input validation
+    if condition_filter is not None and (
+        not isinstance(condition_filter, str) or len(condition_filter.strip()) == 0
+    ):
+        return {
+            "error": "Condition filter must be a non-empty string if provided",
+            "suggestions": ["Use terms like 'pH', 'stress', 'carbon', 'metal'"],
+        }
+
+    threshold_validation = validate_fitness_threshold(
+        max_fitness_threshold, "maximum fitness threshold"
+    )
+    if not threshold_validation.is_valid:
+        return {
+            "error": threshold_validation.error_message,
+            "suggestions": threshold_validation.suggestions,
+        }
+
+    limit_validation = validate_search_limit(limit)
+    if not limit_validation.is_valid:
+        return {
+            "error": limit_validation.error_message,
+            "suggestions": limit_validation.suggestions,
+        }
+
     metadata_registry.load_data()
 
     # Use pre-filtered significant effects instead of full matrix scan
@@ -1136,7 +1579,35 @@ def find_growth_inhibitor_genes(
 
     # Sort by number of conditions where gene inhibits growth
     inhibitor_genes.sort(key=itemgetter("num_inhibitory_conditions"), reverse=True)
-    return inhibitor_genes[:limit]
+    final_genes = inhibitor_genes[:limit]
+
+    return {
+        "data": {
+            "inhibitory_genes": final_genes,
+            "total_genes": len(final_genes),
+            "analysis_params": {
+                "condition_filter": condition_filter,
+                "max_fitness_threshold": max_fitness_threshold,
+                "limit": limit,
+            },
+        },
+        "metadata": {
+            "algorithm": "pre-filtered significant fitness effects scan",
+            "performance_info": "~40K filtered effects vs 4.9M cell scan (100x faster)",
+        },
+        "suggestions": [
+            "get_gene_info",
+            "interpret_fitness_score",
+            "get_condition_details",
+            "analyze_gene_fitness",
+        ]
+        if final_genes
+        else [
+            "try higher max_fitness_threshold (less negative)",
+            "try different condition_filter",
+            "try find_essential_genes",
+        ],
+    }
 
 
 def analyze_gene_fitness(
@@ -1147,6 +1618,14 @@ def analyze_gene_fitness(
 ) -> Dict[str, Any]:
     """
     Analyze fitness effects for a gene knockout mutant across conditions.
+
+    POSIX-style tool: does one thing well - comprehensive gene fitness analysis.
+
+    CHAIN WITH:
+    - get_gene_info() to get basic gene information
+    - interpret_fitness_score() to understand individual fitness values
+    - get_condition_details() to understand experimental conditions
+    - find_essential_genes() or find_growth_inhibitor_genes() for focused analysis
 
     Args:
         gene_id: Gene locus ID or system name
@@ -1237,18 +1716,44 @@ def get_gene_modules(gene_id: str) -> Dict[str, Any]:
     """
     Get module information for a specific gene/locus.
 
+    POSIX-style tool: does one thing well - retrieves functional modules for a gene.
+
+    CHAIN WITH:
+    - get_module_genes() to explore other genes in the same modules
+    - search_modules() to find related functional modules
+    - get_gene_info() to get basic gene information
+
     Args:
         gene_id: Gene locus tag (e.g., 'Atu0001')
 
     Returns:
-        Dict containing modules that include this gene
+        Dict with standardized structure:
+        {
+            "data": {"gene_id": str, "modules": List[Dict], "module_count": int},
+            "metadata": {"source": str},
+            "suggestions": [str]
+        }
     """
+    # Input validation
+    validation = validate_gene_id(gene_id)
+    if not validation.is_valid:
+        return {
+            "error": validation.error_message,
+            "suggestions": validation.suggestions,
+        }
+
     module_metas = metadata_registry.get_gene_modules(gene_id)
 
     if not module_metas:
-        return {"error": f"No modules found for gene {gene_id}"}
+        return {
+            "error": f"No modules found for gene {gene_id}",
+            "suggestions": [
+                "try get_gene_info() to verify gene exists",
+                "try search_modules() to explore available modules",
+            ],
+        }
 
-    modules = [
+    modules_data = [
         {
             "locus_tag": gene_id,
             "module_id": module_meta.module_id,
@@ -1260,26 +1765,61 @@ def get_gene_modules(gene_id: str) -> Dict[str, Any]:
         for module_meta in module_metas
     ]
 
-    return {"gene_id": gene_id, "modules": modules, "module_count": len(modules)}
+    return {
+        "data": {
+            "gene_id": gene_id,
+            "modules": modules_data,
+            "module_count": len(modules_data),
+        },
+        "metadata": {"source": "MetadataRegistry module assignments"},
+        "suggestions": ["get_module_genes", "search_modules", "get_gene_info"],
+    }
 
 
 def get_module_genes(module_id: int) -> Dict[str, Any]:
     """
     Get all genes in a specific module.
 
+    POSIX-style tool: does one thing well - retrieves genes in a functional module.
+
+    CHAIN WITH:
+    - get_gene_info() to get details for genes in the module
+    - get_gene_modules() to explore other modules for these genes
+    - search_modules() to find related functional modules
+
     Args:
         module_id: Module ID number
 
     Returns:
-        Dict containing module info and all genes in the module
+        Dict with standardized structure:
+        {
+            "data": {"module": Dict, "genes": List[Dict], "gene_count": int},
+            "metadata": {"source": str},
+            "suggestions": [str]
+        }
     """
+    # Input validation
+    if not isinstance(module_id, int):
+        return {
+            "error": "Module ID must be an integer",
+            "suggestions": [
+                "Use module IDs from get_all_modules() or search_modules()"
+            ],
+        }
+
     module_meta = metadata_registry.get_module(module_id)
     if not module_meta:
-        return {"error": f"Module {module_id} not found"}
+        return {
+            "error": f"Module {module_id} not found",
+            "suggestions": [
+                "try get_all_modules() to find valid module IDs",
+                "try search_modules() to search by name or category",
+            ],
+        }
 
     gene_metas = metadata_registry.get_module_genes(module_id)
 
-    genes = [
+    genes_data = [
         {
             "locus_tag": gene_meta.locus_id,
             "module_id": module_id,
@@ -1290,35 +1830,65 @@ def get_module_genes(module_id: int) -> Dict[str, Any]:
     ]
 
     return {
-        "module": {
-            "module_id": module_meta.module_id,
-            "name": module_meta.name,
-            "category": module_meta.category,
-            "count": module_meta.gene_count,
+        "data": {
+            "module": {
+                "module_id": module_meta.module_id,
+                "name": module_meta.name,
+                "category": module_meta.category,
+                "count": module_meta.gene_count,
+            },
+            "genes": genes_data,
+            "gene_count": len(genes_data),
         },
-        "genes": genes,
-        "gene_count": len(genes),
+        "metadata": {"source": "MetadataRegistry module-gene assignments"},
+        "suggestions": ["get_gene_info", "get_gene_modules", "search_modules"],
     }
 
 
-def search_modules(query: str, limit: int = 3) -> List[Dict[str, Any]]:
+def search_modules(query: str, limit: int = 3) -> Dict[str, Any]:
     """
     Search for modules by name or category.
+
+    POSIX-style tool: does one thing well - searches functional modules.
+
+    CHAIN WITH:
+    - get_module_genes() to explore genes in found modules
+    - get_gene_modules() to find modules for specific genes
+    - get_all_modules() to browse all available modules
 
     Args:
         query: Search term to match against module names or categories
         limit: Maximum number of results to return (default: 3)
 
     Returns:
-        List of matching modules with their genes
+        Dict with standardized structure:
+        {
+            "data": {"modules": List[Dict], "total_results": int, "query": str},
+            "metadata": {"search_type": str, "limit_applied": int},
+            "suggestions": [str]
+        }
     """
+    # Input validation
+    if not query or not isinstance(query, str) or len(query.strip()) == 0:
+        return {
+            "error": "Search query must be a non-empty string",
+            "suggestions": ["Use module names, categories, or functional keywords"],
+        }
+
+    limit_validation = validate_search_limit(limit)
+    if not limit_validation.is_valid:
+        return {
+            "error": limit_validation.error_message,
+            "suggestions": limit_validation.suggestions,
+        }
+
     module_metas = metadata_registry.search_modules(query, limit)
 
-    results = []
+    modules_data = []
     for module_meta in module_metas:
         gene_metas = metadata_registry.get_module_genes(module_meta.module_id)
 
-        genes = [
+        genes_data = [
             {
                 "locus_tag": gene_meta.locus_id,
                 "module_id": module_meta.module_id,
@@ -1328,7 +1898,7 @@ def search_modules(query: str, limit: int = 3) -> List[Dict[str, Any]]:
             for gene_meta in gene_metas
         ]
 
-        results.append(
+        modules_data.append(
             {
                 "module": {
                     "module_id": module_meta.module_id,
@@ -1336,108 +1906,246 @@ def search_modules(query: str, limit: int = 3) -> List[Dict[str, Any]]:
                     "category": module_meta.category,
                     "count": module_meta.gene_count,
                 },
-                "genes": genes,
-                "gene_count": len(genes),
+                "genes": genes_data,
+                "gene_count": len(genes_data),
             }
         )
 
-    return results
+    return {
+        "data": {
+            "modules": modules_data,
+            "total_results": len(modules_data),
+            "query": query,
+        },
+        "metadata": {"search_type": "fuzzy_match", "limit_applied": limit},
+        "suggestions": ["get_module_genes", "get_gene_modules", "get_all_modules"]
+        if modules_data
+        else [
+            "try broader search terms",
+            "try get_all_modules() to browse all modules",
+        ],
+    }
 
 
-def get_all_modules() -> List[Dict[str, Any]]:
+def get_all_modules() -> Dict[str, Any]:
     """
     Get list of all available modules.
 
+    POSIX-style tool: does one thing well - lists all functional modules.
+
+    CHAIN WITH:
+    - get_module_genes() to explore genes in specific modules
+    - search_modules() to search for modules by keyword
+    - get_gene_modules() to find modules for specific genes
+
     Returns:
-        List of all modules with basic information
+        Dict with standardized structure:
+        {
+            "data": {"modules": List[Dict], "total_modules": int},
+            "metadata": {"source": str},
+            "suggestions": [str]
+        }
     """
-    return metadata_registry.get_all_modules_list()
+    modules_list = metadata_registry.get_all_modules_list()
+
+    return {
+        "data": {"modules": modules_list, "total_modules": len(modules_list)},
+        "metadata": {"source": "MetadataRegistry complete module listing"},
+        "suggestions": ["get_module_genes", "search_modules", "get_gene_modules"]
+        if modules_list
+        else ["no modules available in current dataset"],
+    }
 
 
-def get_conditions_for_gene(gene_id: str) -> Dict[str, Any]:
+def get_fitness_effects_for_gene(gene_id: str) -> Dict[str, Any]:
     """
-    Get all conditions where a gene has significant fitness values (|value| > 2).
+    Get all fitness effects for a gene (conditions where |fitness| > threshold).
+
+    POSIX-style tool: does one thing well - retrieves significant fitness effects.
+
+    CHAIN WITH:
+    - expand_fitness_network() to explore related genes/conditions
+    - interpret_fitness_score() to understand biological meaning
+    - get_gene_info() for basic gene metadata
 
     Args:
-        gene_id: Gene locus ID (e.g., 'Atu0001')
+        gene_id: Gene locus ID (e.g., 'Atu0001') or gene symbol (e.g., 'rpoA')
 
     Returns:
-        Dict containing gene_id and list of conditions with their fitness values
+        Dict with standardized structure:
+        {
+            "data": {"gene_id": str, "fitness_effects": List[Dict], "total_effects": int},
+            "metadata": {"threshold": float, "interpretation": str},
+            "suggestions": ["expand_fitness_network", "interpret_fitness_score"]
+        }
     """
+    # Input validation
+    validation = validate_gene_id(gene_id)
+    if not validation.is_valid:
+        return {
+            "error": validation.error_message,
+            "suggestions": validation.suggestions,
+        }
     fitness_effects = metadata_registry.get_gene_fitness_effects(gene_id)
 
     if not fitness_effects:
-        return {"error": f"No significant conditions found for gene {gene_id}"}
+        return {
+            "error": f"No significant fitness effects found for gene {gene_id}",
+            "suggestions": [
+                "try search_genes() to find similar genes",
+                "try analyze_gene_fitness() for complete fitness data",
+            ],
+        }
 
-    # Convert to expected format and sort by absolute value of fitness score
-    conditions = [
-        {"condition": effect.condition_id, "value": effect.fitness_value}
+    # Convert to standardized format and sort by absolute value of fitness score
+    effects_data = [
+        {"condition": effect.condition_id, "fitness_value": effect.fitness_value}
         for effect in fitness_effects
     ]
-    conditions.sort(
-        key=lambda x: abs(x["value"]) if isinstance(x["value"], (int, float)) else 0,
+    effects_data.sort(
+        key=lambda x: abs(x["fitness_value"])
+        if isinstance(x["fitness_value"], (int, float))
+        else 0,
         reverse=True,
     )
 
     return {
-        "gene_id": gene_id,
-        "conditions": conditions,
-        "total_conditions": len(conditions),
-        "interpretation": "These are conditions where the gene knockout has significant fitness effects (|value| > 2)",
+        "data": {
+            "gene_id": gene_id,
+            "fitness_effects": effects_data,
+            "total_effects": len(effects_data),
+        },
+        "metadata": {
+            "threshold": config.significance_threshold,
+            "interpretation": f"Conditions where gene knockout has significant fitness effects (|value| > {config.significance_threshold})",
+        },
+        "suggestions": [
+            "expand_fitness_network",
+            "interpret_fitness_score",
+            "get_gene_info",
+        ],
     }
 
 
-def get_genes_for_condition(condition_id: str) -> Dict[str, Any]:
+def get_genes_with_fitness_effects(condition_id: str) -> Dict[str, Any]:
     """
-    Get all genes with significant fitness values (|value| > 2) for a condition.
+    Get all genes with significant fitness effects for a specific condition.
+
+    POSIX-style tool: does one thing well - retrieves genes with significant fitness effects.
+
+    CHAIN WITH:
+    - expand_fitness_network() to explore related genes/conditions
+    - interpret_fitness_score() to understand biological meaning
+    - get_condition_details() for experimental condition metadata
 
     Args:
         condition_id: Condition identifier (e.g., 'set10IT004 D,L-Malic Acid (C)')
 
     Returns:
-        Dict containing condition_id and list of genes with their fitness values
+        Dict with standardized structure:
+        {
+            "data": {"condition_id": str, "fitness_effects": List[Dict], "total_genes": int},
+            "metadata": {"threshold": float, "interpretation": str},
+            "suggestions": [str]
+        }
     """
+    # Input validation
+    if (
+        not condition_id
+        or not isinstance(condition_id, str)
+        or len(condition_id.strip()) == 0
+    ):
+        return {
+            "error": "Condition ID must be a non-empty string",
+            "suggestions": [
+                "Use valid condition identifiers from get_growth_conditions()"
+            ],
+        }
+
     fitness_effects = metadata_registry.get_condition_fitness_effects(condition_id)
 
     if not fitness_effects:
         return {
-            "error": f"No genes with significant fitness values found for condition {condition_id}"
+            "error": f"No genes with significant fitness effects found for condition {condition_id}",
+            "suggestions": [
+                "try get_growth_conditions() to find valid condition IDs",
+                "try get_condition_details() for condition information",
+            ],
         }
 
-    # Convert to expected format and sort by absolute value of fitness score
-    genes = [
-        {"gene": effect.gene_id, "value": effect.fitness_value}
+    # Convert to standardized format and sort by absolute value of fitness score
+    genes_data = [
+        {"gene": effect.gene_id, "fitness_value": effect.fitness_value}
         for effect in fitness_effects
     ]
-    genes.sort(
-        key=lambda x: abs(x["value"]) if isinstance(x["value"], (int, float)) else 0,
+    genes_data.sort(
+        key=lambda x: abs(x["fitness_value"])
+        if isinstance(x["fitness_value"], (int, float))
+        else 0,
         reverse=True,
     )
 
     return {
-        "condition_id": condition_id,
-        "genes": genes,
-        "total_genes": len(genes),
-        "interpretation": "These are genes where knockout has significant fitness effects (|value| > 2) in this condition",
+        "data": {
+            "condition_id": condition_id,
+            "fitness_effects": genes_data,
+            "total_genes": len(genes_data),
+        },
+        "metadata": {
+            "threshold": config.significance_threshold,
+            "interpretation": f"Genes where knockout has significant fitness effects (|value| > {config.significance_threshold}) in this condition",
+        },
+        "suggestions": [
+            "expand_fitness_network",
+            "interpret_fitness_score",
+            "get_condition_details",
+        ],
     }
 
 
-def expand_gene_condition_network(gene_id: str, condition_id: str) -> Dict[str, Any]:
+def expand_fitness_network(gene_id: str, condition_id: str) -> Dict[str, Any]:
     """
-    Perform a two-hop expansion from a gene-condition pair to find related genes and conditions.
+    Expand a fitness network from a gene-condition pair to discover related biological interactions.
 
-    Starting from a specific gene-condition pair, this function:
-    1. Finds all conditions where the gene has significant fitness values
-    2. Finds all genes that have significant fitness values in the condition
+    POSIX-style tool: does one thing well - network expansion from fitness effects.
+
+    CHAIN WITH:
+    - get_fitness_effects_for_gene() to find starting points
+    - get_genes_with_fitness_effects() to find related genes
+    - interpret_fitness_score() to understand biological significance
+
+    Starting from a specific gene-condition pair, performs two-hop expansion:
+    1. Finds all conditions where the gene has significant fitness effects
+    2. Finds all genes with significant fitness effects in the condition
     3. Expands to find all conditions for the gene set and all genes for the condition set
 
     Args:
-        gene_id: Gene locus ID (e.g., 'Atu0001')
+        gene_id: Gene locus ID (e.g., 'Atu0001') or gene symbol (e.g., 'rpoA')
         condition_id: Condition identifier (e.g., 'set10IT004 D,L-Malic Acid (C)')
 
     Returns:
-        Dict containing the expanded network of related genes and conditions
+        Dict with standardized network structure and expansion metrics
     """
+    # Input validation
+    gene_validation = validate_gene_id(gene_id)
+    if not gene_validation.is_valid:
+        return {
+            "error": gene_validation.error_message,
+            "suggestions": gene_validation.suggestions,
+        }
+
+    if (
+        not condition_id
+        or not isinstance(condition_id, str)
+        or len(condition_id.strip()) == 0
+    ):
+        return {
+            "error": "Condition ID must be a non-empty string",
+            "suggestions": [
+                "Use valid condition identifiers from get_growth_conditions()"
+            ],
+        }
+
     metadata_registry.load_data()
 
     # Check if the gene-condition pair exists (use index for quick lookup)
@@ -1445,7 +2153,11 @@ def expand_gene_condition_network(gene_id: str, condition_id: str) -> Dict[str, 
 
     if condition_id not in conditions_for_gene:
         return {
-            "error": f"No significant fitness value found for gene {gene_id} in condition {condition_id}"
+            "error": f"No significant fitness effect found for gene {gene_id} in condition {condition_id}",
+            "suggestions": [
+                "try get_fitness_effects_for_gene() to find valid gene-condition pairs",
+                "try get_genes_with_fitness_effects() to find genes for this condition",
+            ],
         }
 
     # Get the specific fitness value for this pair (need to scan once)
@@ -1526,9 +2238,9 @@ mcp.tool(get_gene_modules)
 mcp.tool(get_module_genes)
 mcp.tool(search_modules)
 mcp.tool(get_all_modules)
-mcp.tool(get_conditions_for_gene)
-mcp.tool(get_genes_for_condition)
-mcp.tool(expand_gene_condition_network)
+mcp.tool(get_fitness_effects_for_gene)
+mcp.tool(get_genes_with_fitness_effects)
+mcp.tool(expand_fitness_network)
 
 
 def main() -> None:
